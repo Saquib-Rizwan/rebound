@@ -74,3 +74,48 @@ shell layer, leaving an unterminated quote and a parse error rather than a parti
 file. Failing loudly was lucky - a silent partial write of `taxonomy.py` would have
 been a genuinely confusing bug to chase. Switched to direct file writes for
 anything large.
+
+---
+
+## 4. We burned a whole day of free-tier quota in about ninety seconds
+
+**Phase 2/3. Severity: lost an afternoon of live-model results.**
+
+The classifier ablation was launched across the full batch on eight worker threads:
+three arms on 400 payments plus two drift sets, roughly 1,060 model calls, fired as
+fast as the pool could go.
+
+Two things went wrong at once, and the second was hidden by the first.
+
+**Thundering herd.** Eight workers with no client-side pacing do not discover a rate
+limit gracefully - they all fire, all get `429`, all sleep on the same backoff
+schedule, and all wake up together to do it again. The retry policy was
+synchronising the failure instead of spreading it.
+
+**Silent degradation.** When retries were exhausted the pipeline fell back to the
+offline classifier, exactly as designed. But nothing *counted* that. The run would
+have reported a single accuracy number for an arm where 387 of 400 rows were
+actually scored by a completely different classifier. That is a much worse bug than
+the crash, because it produces a plausible number instead of an error.
+
+**What we changed.**
+
+1. A shared token-bucket `RateLimiter` paced at the published requests-per-minute,
+   so the pool self-limits rather than being refused.
+2. A circuit breaker: after five consecutive quota rejections the provider is
+   abandoned for the rest of the run instead of being retried into the ground.
+3. `degraded_rows` is now counted and printed. Any arm where the provider dropped
+   out says so in the report, and its accuracy is labelled a floor rather than a
+   score.
+4. The model-heavy arms are capped (default 150 rows) with the cap written into the
+   report. A truncated study that does not disclose the truncation reads as full
+   coverage.
+
+**Also learned, the boring way:** `gemini-2.5-flash` is closed to new API keys, and
+`gemini-3.5-flash` carries a much smaller free allowance than the `-lite` models.
+Defaulted to `gemini-3.5-flash-lite` and made the model, API version and rate limit
+all environment-configurable, because that assumption will rot again.
+
+**What saved us:** the on-disk response cache. Every answer already paid for is
+still on disk, so re-running the evaluation costs nothing and the numbers reproduce
+without a network at all.

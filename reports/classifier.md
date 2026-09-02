@@ -9,10 +9,12 @@ Scored against held-out labels the classifier never sees (`data/labels.json`, wr
 | Arm | Accuracy | Accuracy when answered | Coverage | Macro F1 | Error cost | Model rows | Net calls | LLM cost | Wall time |
 |---|---|---|---|---|---|---|---|---|---|
 | rules_only | 92.5% | 100.0% | 92.5% | 0.951 | INR 4,040 | 0 | 0 | $0.0000 | 0.01s |
-| model_only | 43.5% | 83.7% | 52.0% | 0.424 | INR 19,700 | 400 | 0 | $0.0000 | 0.04s |
-| hybrid | 96.2% | 100.0% | 96.2% | 0.991 | INR 3,286 | 30 | 0 | $0.0000 | 0.01s |
+| model_only | 45.2% | 84.6% | 53.5% | 0.455 | INR 19,314 | 400 | 387 | $0.0000 | 9.21s |
+| hybrid | 96.2% | 100.0% | 96.2% | 0.991 | INR 3,286 | 30 | 28 | $0.0000 | 8.95s |
 
 `Model rows` is how many payments were routed to the model. `Net calls` is how many of those actually hit the network - the rest were served from the on-disk response cache, which is why a re-run costs nothing.
+
+> **Degraded rows present.** `model_only` fell back to the offline classifier on 387 of 400 model rows; `hybrid` fell back to the offline classifier on 28 of 30 model rows. The provider refused those calls (free-tier quota), the circuit breaker opened, and the pipeline kept running on the offline classifier. Those arms are a blend of two classifiers and their accuracy should be read as a floor, not as the model's score.
 
 Error cost is the modelled rupee consequence of the mistakes each arm makes, not a count of them. See `backend/rebound/diagnose/error_cost.py` for every assumption behind it.
 

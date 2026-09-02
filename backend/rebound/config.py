@@ -39,18 +39,24 @@ CACHE_DIR = DATA_DIR / "llm_cache"
 # "auto" picks the first provider with credentials, else the offline fallback.
 LLM_PROVIDER = os.getenv("REBOUND_LLM_PROVIDER", "auto")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-GEMINI_MODEL = os.getenv("REBOUND_GEMINI_MODEL", "gemini-3.5-flash")
+GEMINI_MODEL = os.getenv("REBOUND_GEMINI_MODEL", "gemini-3.5-flash-lite")
 GEMINI_API_VERSION = os.getenv("REBOUND_GEMINI_API_VERSION", "v1beta")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 ANTHROPIC_MODEL = os.getenv("REBOUND_ANTHROPIC_MODEL", "claude-opus-5")
 
 LLM_TIMEOUT_S = float(os.getenv("REBOUND_LLM_TIMEOUT", "20"))
 LLM_MAX_RETRIES = int(os.getenv("REBOUND_LLM_RETRIES", "3"))
-LLM_WORKERS = int(os.getenv("REBOUND_LLM_WORKERS", "8"))
+LLM_WORKERS = int(os.getenv("REBOUND_LLM_WORKERS", "4"))
+# Client-side ceiling. Free tiers publish a requests-per-minute limit and answer
+# every request past it with a 429, so we pace ourselves rather than discovering
+# the limit by being refused.
+LLM_RPM = int(os.getenv("REBOUND_LLM_RPM", "20"))
 LLM_CACHE_ENABLED = os.getenv("REBOUND_LLM_CACHE", "1") == "1"
 
 # Published per-1M-token prices, used only for cost accounting in reports.
 PRICES_USD_PER_MTOK = {
+    "gemini-3.5-flash-lite": (0.10, 0.40),
+    "gemini-3.1-flash-lite": (0.10, 0.40),
     "gemini-3.5-flash": (0.30, 2.50),
     "gemini-flash-latest": (0.30, 2.50),
     "gemini-2.5-flash": (0.30, 2.50),

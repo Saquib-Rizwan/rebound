@@ -61,6 +61,7 @@ class ClassifierReport:
     model_rows: int = 0        # rows routed to the model
     llm_calls: int = 0         # network calls actually made (cache misses only)
     llm_cost_usd: float = 0.0
+    degraded_rows: int = 0   # rows the provider refused, served by offline fallback
     deterministic_share: float = 0.0
     demoted_low_confidence: int = 0
     demoted_hostile: int = 0
@@ -160,6 +161,7 @@ def run_variant(
     report.model_rows = len(payments) if force_all_to_model else classifier.stats.by_model
     report.llm_calls = classifier.tail.call_count
     report.llm_cost_usd = classifier.tail.total_cost_usd
+    report.degraded_rows = classifier.tail.degraded_count
     report.deterministic_share = 0.0 if force_all_to_model else classifier.stats.deterministic_share
     report.demoted_low_confidence = classifier.stats.demoted_low_confidence
     report.demoted_hostile = classifier.stats.demoted_hostile
@@ -171,6 +173,7 @@ def markdown_report(
     reports: List[ClassifierReport],
     batch_at_risk_paise: int,
     drift_reports: Optional[Dict[str, List[ClassifierReport]]] = None,
+    notes: Optional[List[str]] = None,
 ) -> str:
     lines: List[str] = []
     add = lines.append
@@ -185,6 +188,13 @@ def markdown_report(
         "so near-perfect rule precision on it is partly circular. The drift set "
         "exists to break that circularity and is the number we actually stand behind.")
     add("")
+
+    if notes:
+        add("### Coverage caps applied to this run")
+        add("")
+        for note in notes:
+            add("- " + note)
+        add("")
 
     add("## Ablation")
     add("")
@@ -203,6 +213,16 @@ def markdown_report(
         "how many of those actually hit the network - the rest were served from the "
         "on-disk response cache, which is why a re-run costs nothing.")
     add("")
+    degraded = [r for r in reports if r.degraded_rows]
+    if degraded:
+        add("> **Degraded rows present.** " + "; ".join(
+            "`{}` fell back to the offline classifier on {} of {} model rows".format(
+                r.name, r.degraded_rows, r.model_rows) for r in degraded)
+            + ". The provider refused those calls (free-tier quota), the circuit breaker "
+              "opened, and the pipeline kept running on the offline classifier. Those "
+              "arms are a blend of two classifiers and their accuracy should be read "
+              "as a floor, not as the model's score.")
+        add("")
     add("Error cost is the modelled rupee consequence of the mistakes each arm "
         "makes, not a count of them. See `backend/rebound/diagnose/error_cost.py` "
         "for every assumption behind it.")
@@ -286,9 +306,10 @@ def write_report(
     reports: List[ClassifierReport],
     batch_at_risk_paise: int,
     drift_reports: Optional[Dict[str, List[ClassifierReport]]] = None,
+    notes: Optional[List[str]] = None,
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        markdown_report(reports, batch_at_risk_paise, drift_reports), encoding="utf-8"
+        markdown_report(reports, batch_at_risk_paise, drift_reports, notes), encoding="utf-8"
     )
     return path

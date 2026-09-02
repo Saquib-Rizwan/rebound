@@ -454,8 +454,42 @@ def usd_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     return (input_tokens / 1e6) * in_price + (output_tokens / 1e6) * out_price
 
 
+class RateLimiter:
+    """Token bucket shared by every worker thread.
+
+    Without this, a thread pool discovers the provider's rate limit by slamming
+    into it: all N workers fire at once, all get 429, all back off together, and
+    all retry together. Pacing at the published limit is both faster and kinder.
+    """
+
+    def __init__(self, per_minute: int):
+        self.interval = 60.0 / max(1, per_minute)
+        self._next_slot = 0.0
+        self._lock = threading.Lock()
+
+    def acquire(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            wait = max(0.0, self._next_slot - now)
+            self._next_slot = max(now, self._next_slot) + self.interval
+        if wait > 0:
+            time.sleep(wait)
+
+
+# After this many consecutive quota rejections we stop asking. A free tier that
+# has said "no" five times in a row is not going to say yes on the sixth, and
+# every further attempt costs wall-clock in backoff for a guaranteed failure.
+BREAKER_THRESHOLD = 5
+
+
 class TailClassifier:
-    """Wraps a provider with caching, retries, cost accounting and hard fallback."""
+    """Wraps a provider with caching, retries, cost accounting and hard fallback.
+
+    Includes a circuit breaker on quota exhaustion. When the provider starts
+    refusing, the pipeline degrades to the offline classifier and **counts how many
+    rows were degraded** - a run that silently switched models mid-batch and
+    reported one accuracy figure would be lying about what produced it.
+    """
 
     def __init__(self, provider: Optional[Provider] = None):
         self.provider = provider or select_provider(config.LLM_PROVIDER)
@@ -464,8 +498,16 @@ class TailClassifier:
         self.call_count = 0
         self.cache_hits = 0
         self.total_cost_usd = 0.0
+        self.degraded_count = 0
+        self.limiter = RateLimiter(config.LLM_RPM)
+        self._consecutive_quota_errors = 0
+        self._breaker_open = False
         # Counters are read by the report and written from worker threads.
         self._lock = threading.Lock()
+
+    @property
+    def breaker_open(self) -> bool:
+        return self._breaker_open
 
     def diagnose(
         self, payment: FailedPayment, clean_description: str, flags: List[str]
@@ -507,20 +549,41 @@ class TailClassifier:
         )
 
     def _call_with_retries(self, prompt: str) -> _Response:
+        if self._breaker_open:
+            with self._lock:
+                self.degraded_count += 1
+            response = self._fallback.classify(prompt)
+            response.verdict.rationale = "Provider quota exhausted; offline fallback used."
+            return response
+
         last_error: Optional[Exception] = None
         for attempt in range(config.LLM_MAX_RETRIES + 1):
             try:
-                return self.provider.classify(prompt)
+                if self.provider.is_language_model:
+                    self.limiter.acquire()
+                response = self.provider.classify(prompt)
+                with self._lock:
+                    self._consecutive_quota_errors = 0
+                return response
             except Exception as exc:  # noqa: BLE001 - provider SDKs raise many types
                 last_error = exc
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status == 429:
+                    with self._lock:
+                        self._consecutive_quota_errors += 1
+                        if self._consecutive_quota_errors >= BREAKER_THRESHOLD:
+                            self._breaker_open = True
+                    if self._breaker_open:
+                        break
                 if attempt < config.LLM_MAX_RETRIES:
-                    status = getattr(getattr(exc, "response", None), "status_code", None)
                     # Free tiers throttle hard. A 429 answered in 400ms is just a
                     # second 429, so back off on a different scale entirely.
                     base = 8.0 if status == 429 else 0.4
                     time.sleep(base * (2 ** attempt))
 
         # Degrade, never crash: an unreachable model must not stop recovery.
+        with self._lock:
+            self.degraded_count += 1
         response = self._fallback.classify(prompt)
         response.verdict.rationale = "Provider failed ({}); offline fallback used.".format(
             type(last_error).__name__ if last_error else "unknown"
