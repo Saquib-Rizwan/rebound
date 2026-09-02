@@ -45,9 +45,10 @@ class Diagnosis(BaseModel):
     payment_id: str
     failure_class: FailureClass
     confidence: float
-    source: str                       # "rules" | "llm" | "llm_fallback_rules"
+    source: str                       # "rules" | "gemini" | "anthropic" | "offline_tfidf"
     rule_id: Optional[str] = None
     rationale: str = ""
+    flags: List[str] = Field(default_factory=list)   # sanitizer findings, audit-visible
     llm_tokens: int = 0
     llm_cost_usd: float = 0.0
     latency_ms: float = 0.0
