@@ -119,3 +119,45 @@ all environment-configurable, because that assumption will rot again.
 **What saved us:** the on-disk response cache. Every answer already paid for is
 still on disk, so re-running the evaluation costs nothing and the numbers reproduce
 without a network at all.
+
+---
+
+## 5. The sensitivity sweep was measuring the wrong thing, and it inverted a conclusion
+
+**Phase 5. Severity: would have shipped a false claim about robustness.**
+
+The recovery harness perturbs the world's parameters to ask *"how wrong can the
+agent's beliefs be before it stops beating the naive alternatives?"* Each of the
+agent's efficacy numbers is multiplied by a random shock, and sigma controls how
+big the shock is.
+
+The first version used `exp(N(0, sigma))`. That is a lognormal, and a lognormal
+with mean parameter zero does **not** have mean 1 - it has mean `exp(sigma^2/2)`.
+At sigma 0.8 that is 1.38.
+
+So every step of the "sensitivity" sweep was quietly making the simulated world
+**38% easier to recover in**, on top of adding noise. The sweep was not measuring
+robustness to miscalibration at all. It was measuring which policy benefits most
+from a world where every intervention suddenly works better - and the answer to
+that question is always "the one that intervenes the most", which is
+`nudge_all`. The table showed the agent losing at high sigma and the reason was
+arithmetic, not strategy.
+
+**Fix:** use a mean-preserving shock, `exp(N(-sigma^2/2, sigma))`, whose
+expectation is exactly 1 at every sigma. Verified numerically over 200k draws
+before trusting it.
+
+**The uncomfortable part.** After the fix, the agent *still* drops to second place
+at sigma 0.5 and above. The bug was real and the conclusion it produced was also,
+as it turns out, roughly right - for a completely different reason. A policy that
+targets badly really is worse than one that does not target at all, and that is now
+stated in the report as a finding rather than hidden as an artifact.
+
+Two things this cost us and one it bought:
+
+- We nearly published a robustness claim built on a distributional mistake.
+- We nearly published the *opposite* claim after fixing it, having assumed the
+  finding would disappear along with the bug.
+- It produced the most useful sentence in the whole report: we can now say exactly
+  where this approach stops working, and why calibration against observed outcomes
+  is the thing that has to happen before anyone trusts it with a budget.

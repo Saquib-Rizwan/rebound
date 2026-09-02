@@ -218,6 +218,70 @@ def cmd_verify_gateway(args) -> int:
     return 3
 
 
+def cmd_eval_policy(args) -> int:
+    """Rebound against the naive alternatives, on simulated outcomes."""
+    from .diagnose.classifier import HybridClassifier
+    from .diagnose.llm import OfflineProvider, TailClassifier
+    from .sim import baselines
+    from .sim.evaluate_policy import compare, markdown_report, sensitivity, write_report
+
+    payments, truth = load_batch(config.DATA_DIR)
+    if args.sample:
+        payments = payments[: args.sample]
+        truth = {p.payment_id: truth[p.payment_id] for p in payments}
+    payments.sort(key=lambda p: p.created_at)
+
+    tail = TailClassifier(OfflineProvider()) if args.provider == "offline" else TailClassifier()
+    classifier = HybridClassifier(tail=tail)
+
+    # Diagnose once. Every policy sees the same diagnoses, so any difference
+    # between them is the policy, not a different view of the same payment.
+    print("diagnosing {} payments with {} ...".format(len(payments), tail.provider.name))
+    diagnoses = {p.payment_id: classifier.diagnose(p) for p in payments}
+    if tail.degraded_count:
+        print("  note: {} rows degraded to the offline classifier".format(tail.degraded_count))
+
+    print("running {} policies x {} replications ...".format(
+        len(baselines.POLICY_ORDER), args.replications))
+    summaries = compare(payments, diagnoses, truth,
+                        replications=args.replications, sigma=args.sigma)
+
+    print("sensitivity sweep ...")
+    sens = sensitivity(payments, diagnoses, truth, replications=args.sens_replications)
+
+    report = markdown_report(summaries, sens, args.replications, args.sigma, tail.provider.name)
+    out = write_report(config.REPORTS_DIR / "recovery.md", report)
+
+    base = summaries["do_nothing"].mean_net()
+    print()
+    head = "{:<12} {:>9} {:>14} {:>12} {:>16} {:>10}".format(
+        "policy", "rec rate", "recovered", "cost", "net contribution", "contacts")
+    print(head)
+    print("-" * len(head))
+    for name in baselines.POLICY_ORDER:
+        s = summaries[name]
+        print("{:<12} {:>8.1%} {:>14,.0f} {:>12,.0f} {:>16,.0f} {:>10,.0f}".format(
+            name, s.recovery_rate, s.mean("recovered_paise") / 100,
+            s.mean("action_cost_paise") / 100, s.mean_net() / 100, s.mean("contacts")))
+
+    agent = summaries["rebound"]
+    nothing = summaries["do_nothing"]
+    best_naive = max((summaries[n] for n in ("retry_all", "blind_24h", "nudge_all")),
+                     key=lambda s: s.mean_net())
+    lo, hi = agent.uplift_interval(nothing)
+    nlo, nhi = agent.uplift_interval(best_naive)
+    print()
+    print("uplift vs do_nothing : INR {:>9,.0f}  90% CI [{:,.0f}, {:,.0f}]  wins {:.0%}".format(
+        (agent.mean_net() - base) / 100, lo / 100, hi / 100, agent.beats(nothing)))
+    print("uplift vs {:<10} : INR {:>9,.0f}  90% CI [{:,.0f}, {:,.0f}]  wins {:.0%}".format(
+        best_naive.name, (agent.mean_net() - best_naive.mean_net()) / 100,
+        nlo / 100, nhi / 100, agent.beats(best_naive)))
+    print("suppressed           : {:.0f} of {} payments".format(
+        agent.mean("suppressed"), agent.n_payments))
+    print("report               : {}".format(out))
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -244,6 +308,14 @@ def main(argv=None) -> int:
 
     vg = sub.add_parser("verify-gateway", help="make one real Razorpay test-mode call")
     vg.set_defaults(func=cmd_verify_gateway)
+
+    ep = sub.add_parser("eval-policy", help="rebound vs naive baselines on simulated outcomes")
+    ep.add_argument("--sample", type=int, default=0)
+    ep.add_argument("--provider", choices=["auto", "offline"], default="offline")
+    ep.add_argument("--replications", type=int, default=40)
+    ep.add_argument("--sens-replications", type=int, default=12)
+    ep.add_argument("--sigma", type=float, default=0.35)
+    ep.set_defaults(func=cmd_eval_policy)
 
     args = parser.parse_args(argv)
     return args.func(args)
