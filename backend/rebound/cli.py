@@ -173,6 +173,51 @@ def cmd_run(args) -> int:
     return 0
 
 
+def cmd_verify_gateway(args) -> int:
+    """Makes exactly ONE real test-mode call, so the integration can be proven.
+
+    Deliberately a separate command rather than a flag on `run`: proving the
+    credentials work and blasting a batch at the gateway are different intentions
+    and should not share a code path.
+    """
+    from datetime import datetime
+
+    from .ingest.razorpay_client import MockGateway, RazorpayTestGateway, build_gateway
+
+    gateway = build_gateway()
+    print("gateway      : {} (live={})".format(gateway.name, getattr(gateway, "live", False)))
+
+    if isinstance(gateway, MockGateway):
+        print("\nNo Razorpay credentials found, so the mock gateway is in use.")
+        print("Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env to test for real.")
+        print("Test-mode keys start with rzp_test_ and move no money.")
+        return 1
+
+    if not str(config.RAZORPAY_KEY_ID).startswith("rzp_test_"):
+        print("\nREFUSING: key id does not start with rzp_test_.")
+        print("This command will not talk to a live Razorpay account.")
+        return 2
+
+    stamp = datetime.now().strftime("%H%M%S")
+    print("creating one test payment link for INR 499.00 ...")
+    result = gateway.create_payment_link(
+        payment_id="verify_{}".format(stamp),
+        amount_paise=49900,
+        description="Rebound integration check - test mode, no money moves",
+        expire_in_hours=24.0,
+    )
+    if result.ok:
+        print("\nSUCCESS")
+        print("  razorpay id : {}".format(result.reference))
+        print("  short url   : {}".format(result.short_url))
+        print("\nOpen that URL - it is a real Razorpay checkout page in test mode.")
+        print("It will also appear in your dashboard under Payment Links (Test Mode).")
+        return 0
+
+    print("\nFAILED: {}".format(result.error))
+    return 3
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -196,6 +241,9 @@ def main(argv=None) -> int:
     run.add_argument("--live", action="store_true",
                      help="actually call the gateway (default is dry run)")
     run.set_defaults(func=cmd_run)
+
+    vg = sub.add_parser("verify-gateway", help="make one real Razorpay test-mode call")
+    vg.set_defaults(func=cmd_verify_gateway)
 
     args = parser.parse_args(argv)
     return args.func(args)
