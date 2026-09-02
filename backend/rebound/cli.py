@@ -90,6 +90,89 @@ def cmd_eval_classifier(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run(args) -> int:
+    """One full agent pass over the batch: diagnose, decide, execute, record."""
+    from datetime import timedelta
+
+    from .diagnose.classifier import HybridClassifier
+    from .diagnose.llm import OfflineProvider, TailClassifier
+    from .execute.executor import Executor
+    from .ledger.store import Ledger
+    from .policy import engine
+    from .policy.guardrails import AgentState
+
+    payments, _ = load_batch(config.DATA_DIR)
+    if args.sample:
+        payments = payments[: args.sample]
+
+    # Chronological order matters: cooldowns, weekly caps and daily budgets only
+    # mean anything if decisions are made in the order the failures happened.
+    payments.sort(key=lambda p: p.created_at)
+
+    tail = TailClassifier(OfflineProvider()) if args.provider == "offline" else TailClassifier()
+    classifier = HybridClassifier(tail=tail)
+    state = AgentState()
+    ledger = Ledger(config.DATA_DIR / "rebound.sqlite3")
+    executor = Executor(ledger, dry_run=not args.live)
+
+    run_id = args.run_id or "run_{}".format(payments[0].created_at.strftime("%Y%m%d") )
+    ledger.start_run(
+        run_id=run_id,
+        policy_version=config.POLICY_VERSION,
+        provider=tail.provider.name,
+        model=tail.provider.model,
+        dry_run=executor.dry_run,
+        batch_size=len(payments),
+        notes=args.notes,
+    )
+
+    for payment in payments:
+        # The agent picks a failure up shortly after it happens, not instantly.
+        now = payment.created_at + timedelta(minutes=15)
+        diagnosis = classifier.diagnose(payment)
+        decision = engine.decide(payment, diagnosis, state, now)
+        engine.apply_to_state(decision, state)
+        did = ledger.record_decision(run_id, decision)
+        executor.execute(decision, did)
+
+    at_risk = sum(p.amount for p in payments)
+    print("run: {}   payments: {}   at risk: INR {:,.0f}".format(run_id, len(payments), at_risk / 100))
+    print("provider: {} ({})   gateway: {}   dry_run: {}".format(
+        tail.provider.name, tail.provider.model, executor.gateway.name, executor.dry_run))
+    if tail.degraded_count:
+        print("WARNING: {} rows degraded to the offline classifier".format(tail.degraded_count))
+
+    print("\naction mix")
+    print("  {:<20} {:>6} {:>16} {:>8}".format("action", "count", "value at risk", "avg P"))
+    for row in ledger.action_mix(run_id):
+        print("  {:<20} {:>6} {:>16,.0f} {:>8}".format(
+            row["intervention"], row["n"], (row["paise"] or 0) / 100, row["avg_p"]))
+
+    print("\nguardrails that blocked something")
+    hits = ledger.guardrail_hits(run_id)
+    if not hits:
+        print("  (none fired - suspicious, check the rails are wired)")
+    for row in hits:
+        print("  {:<26} blocked {:>5} options across {:>4} payments".format(
+            row["guardrail"], row["blocked_candidates"], row["payments"]))
+
+    caution = ledger.cost_of_caution(run_id)
+    print("\ncost of caution")
+    print("  guardrails suppressed {} payments carrying INR {:,.0f} of expected value".format(
+        caution["payments"], caution["forgone_paise"] / 100))
+    for row in caution["by_guardrail"]:
+        print("    {:<26} INR {:>12,.0f}".format(row["guardrail"], (row["ev_blocked"] or 0) / 100))
+
+    spend = sum(v for (m, d), v in state.spend_by_merchant_day.items())
+    contacts = sum(len(v) for v in state.contacts_by_customer.values())
+    print("\nspend on actions : INR {:,.2f}".format(spend / 100))
+    print("customer contacts: {}".format(contacts))
+    print("llm cost         : ${:.4f} over {} calls".format(tail.total_cost_usd, tail.call_count))
+    print("ledger           : {}".format(ledger.path))
+    ledger.close()
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -104,6 +187,15 @@ def main(argv=None) -> int:
     ev.add_argument("--sample", type=int, default=0, help="cap rows for every arm")
     ev.add_argument("--model-cap", type=int, default=150, help="max rows per model-heavy arm")
     ev.set_defaults(func=cmd_eval_classifier)
+
+    run = sub.add_parser("run", help="one full agent pass over the batch")
+    run.add_argument("--sample", type=int, default=0)
+    run.add_argument("--provider", choices=["auto", "offline"], default="auto")
+    run.add_argument("--run-id", default="")
+    run.add_argument("--notes", default="")
+    run.add_argument("--live", action="store_true",
+                     help="actually call the gateway (default is dry run)")
+    run.set_defaults(func=cmd_run)
 
     args = parser.parse_args(argv)
     return args.func(args)

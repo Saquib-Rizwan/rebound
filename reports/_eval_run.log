@@ -1,0 +1,14 @@
+provider: gemini
+
+set        arm           accuracy  coverage   macroF1    error cost  model rows  degraded
+-----------------------------------------------------------------------------------------
+main       rules_only      92.5%    92.5%     0.951        4,040           0         0
+main       model_only      62.0%    69.3%     0.712        4,225         150       100
+main       hybrid          96.8%   100.0%     0.978          116          30         0
+paraphrase rules_only       0.0%     0.7%     0.000       12,469           0         0
+paraphrase hybrid          62.0%    66.7%     0.548        4,424         149       128
+noise      rules_only      40.0%    40.0%     0.529        6,827           0         0
+noise      hybrid          74.7%    84.7%     0.791        2,835          90        39
+
+deterministic share (hybrid, main): 92.5%
+report: D:\razorpay\reports\classifier.md
