@@ -282,6 +282,119 @@ def cmd_eval_policy(args) -> int:
     return 0
 
 
+def cmd_serve(args) -> int:
+    """Runs the webhook receiver and read API."""
+    import uvicorn
+
+    print("Rebound API on http://{}:{}".format(args.host, args.port))
+    print("  webhook endpoint : POST /webhooks/razorpay")
+    print("  health           : GET  /health")
+    print("  webhook secret   : {}".format(
+        "configured" if config.RAZORPAY_WEBHOOK_SECRET else "MISSING (set RAZORPAY_WEBHOOK_SECRET)"))
+    uvicorn.run("rebound.api.main:app", host=args.host, port=args.port, reload=args.reload)
+    return 0
+
+
+def cmd_simulate_webhook(args) -> int:
+    """Signs a realistic Razorpay event and posts it to the local receiver.
+
+    Razorpay cannot reach localhost, so without this you would need a tunnel just
+    to prove the receiver works. This signs with the same secret the real sender
+    uses, so it exercises the genuine verification path rather than bypassing it.
+    """
+    import json
+    import time
+
+    import httpx
+
+    from .ingest.webhooks import compute_signature
+
+    secret = config.RAZORPAY_WEBHOOK_SECRET
+    if not secret:
+        print("RAZORPAY_WEBHOOK_SECRET is not set. Add it to .env first.")
+        return 1
+
+    now = int(time.time())
+    if args.event == "payment.failed":
+        event = {
+            "entity": "event",
+            "account_id": "acc_demo",
+            "event": "payment.failed",
+            "contains": ["payment"],
+            "payload": {"payment": {"entity": {
+                "id": args.payment_id,
+                "entity": "payment",
+                "amount": args.amount,
+                "currency": "INR",
+                "status": "failed",
+                "order_id": "order_" + args.payment_id[-8:],
+                "method": args.method,
+                "bank": "HDFC",
+                "error_code": "BAD_REQUEST_ERROR",
+                "error_description": args.description,
+                "error_source": "bank",
+                "error_step": "payment_authorization",
+                "error_reason": args.reason or None,
+                "created_at": now,
+                "notes": {
+                    "merchant_id": "mrch_d2c_apparel",
+                    "customer_id": "cust_00042",
+                    "consent_whatsapp": "true",
+                    "consent_sms": "true",
+                    "consent_email": "true",
+                    "prior_successes": "4",
+                },
+            }}},
+            "created_at": now,
+        }
+    else:
+        event = {
+            "entity": "event",
+            "account_id": "acc_demo",
+            "event": "payment_link.paid",
+            "contains": ["payment_link", "payment"],
+            "payload": {
+                "payment_link": {"entity": {
+                    "id": "plink_demo",
+                    "reference_id": "rebound_" + args.payment_id,
+                    "amount": args.amount,
+                    "amount_paid": args.amount,
+                    "status": "paid",
+                }},
+                "payment": {"entity": {
+                    "id": args.payment_id,
+                    "amount": args.amount,
+                    "status": "captured",
+                }},
+            },
+            "created_at": now,
+        }
+
+    raw = json.dumps(event, separators=(",", ":")).encode("utf-8")
+    signature = compute_signature(raw, secret)
+    event_id = args.event_id or "evt_sim_{}_{}".format(args.payment_id[-6:], now)
+
+    url = "http://{}:{}/webhooks/razorpay".format(args.host, args.port)
+    headers = {
+        "Content-Type": "application/json",
+        "X-Razorpay-Signature": signature if not args.bad_signature else "deadbeef",
+        "X-Razorpay-Event-Id": event_id,
+    }
+    try:
+        resp = httpx.post(url, content=raw, headers=headers, timeout=20.0)
+    except Exception as exc:
+        print("could not reach {} ({}). Is `python -m rebound serve` running?".format(
+            url, type(exc).__name__))
+        return 2
+
+    print("POST {} -> {}".format(url, resp.status_code))
+    print("  event      : {}".format(event["event"]))
+    print("  payment    : {}  INR {:,.2f}".format(args.payment_id, args.amount / 100))
+    print("  signature  : {}".format("deliberately invalid" if args.bad_signature else "valid"))
+    print("  response   : {}".format(resp.text[:200]))
+    return 0 if resp.status_code < 400 else 3
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -316,6 +429,28 @@ def main(argv=None) -> int:
     ep.add_argument("--sens-replications", type=int, default=12)
     ep.add_argument("--sigma", type=float, default=0.35)
     ep.set_defaults(func=cmd_eval_policy)
+
+    sv = sub.add_parser("serve", help="run the webhook receiver and read API")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--reload", action="store_true")
+    sv.set_defaults(func=cmd_serve)
+
+    sw = sub.add_parser("simulate-webhook", help="sign and post a Razorpay event locally")
+    sw.add_argument("--event", choices=["payment.failed", "payment_link.paid"],
+                    default="payment.failed")
+    sw.add_argument("--payment-id", default="pay_DEMO0000001")
+    sw.add_argument("--amount", type=int, default=249900)
+    sw.add_argument("--method", default="card")
+    sw.add_argument("--reason", default="")
+    sw.add_argument("--description", default="Declined by bank. Please contact your card issuer.")
+    sw.add_argument("--host", default="127.0.0.1")
+    sw.add_argument("--port", type=int, default=8000)
+    sw.add_argument("--event-id", default="",
+                    help="reuse an id to simulate a Razorpay redelivery")
+    sw.add_argument("--bad-signature", action="store_true",
+                    help="send a wrong signature, to prove it is rejected")
+    sw.set_defaults(func=cmd_simulate_webhook)
 
     args = parser.parse_args(argv)
     return args.func(args)

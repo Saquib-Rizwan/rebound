@@ -106,3 +106,20 @@ CREATE TABLE IF NOT EXISTS outcomes (
     action_cost_paise   REAL NOT NULL DEFAULT 0,
     source              TEXT NOT NULL          -- 'simulated' or 'observed'
 );
+
+-- Raw webhook receipts. Kept because "did Razorpay actually tell us, and when"
+-- is the first question asked when a recovery is disputed, and because the
+-- event id is how we drop the duplicates Razorpay deliberately sends on retry.
+CREATE TABLE IF NOT EXISTS webhook_events (
+    event_id        TEXT PRIMARY KEY,
+    event_type      TEXT NOT NULL,
+    received_at     TEXT NOT NULL,
+    signature_ok    INTEGER NOT NULL,
+    payment_id      TEXT,
+    handled         INTEGER NOT NULL DEFAULT 0,
+    error           TEXT,
+    raw             TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_payment ON webhook_events(payment_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_type    ON webhook_events(event_type);

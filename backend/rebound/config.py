@@ -67,6 +67,8 @@ PRICES_USD_PER_MTOK = {
 # ------------------------------------------------------------------- Razorpay
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+# Set this to the same string you type into the Razorpay dashboard webhook form.
+RAZORPAY_WEBHOOK_SECRET = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
 # Hard default. Live execution must be switched on deliberately, never by accident.
 DRY_RUN = os.getenv("REBOUND_DRY_RUN", "1") == "1"
 

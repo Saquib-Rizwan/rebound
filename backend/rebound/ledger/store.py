@@ -155,6 +155,57 @@ class Ledger:
         )
         self.conn.commit()
 
+    def seen_event(self, event_id: str) -> bool:
+        """At-least-once delivery means we must remember, not just check memory."""
+        row = self.conn.execute(
+            "SELECT 1 FROM webhook_events WHERE event_id = ? AND handled = 1", (event_id,)
+        ).fetchone()
+        return row is not None
+
+    def record_webhook(
+        self,
+        event_id: str,
+        event_type: str,
+        signature_ok: bool,
+        raw: str,
+        payment_id: Optional[str] = None,
+        handled: bool = False,
+        error: Optional[str] = None,
+    ) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO webhook_events (event_id, event_type, received_at, "
+            "signature_ok, payment_id, handled, error, raw) VALUES (?,?,?,?,?,?,?,?)",
+            (event_id, event_type, datetime.now().isoformat(timespec="seconds"),
+             int(signature_ok), payment_id, int(handled), error, raw[:20000]),
+        )
+        self.conn.commit()
+
+    def record_observed_recovery(
+        self, payment_id: str, amount_paise: int, hours_to_recovery: Optional[float] = None
+    ) -> None:
+        """An outcome we watched happen, not one we modelled.
+
+        Marked `observed` so no report can ever blend measured recoveries with
+        simulated ones without the distinction being visible in the data.
+        """
+        self.conn.execute(
+            "INSERT OR REPLACE INTO outcomes (payment_id, run_id, recovered, "
+            "recovered_paise, hours_to_recovery, customer_contacts, action_cost_paise, "
+            "source) VALUES (?, NULL, 1, ?, ?, "
+            "COALESCE((SELECT customer_contacts FROM outcomes WHERE payment_id = ?), 0), "
+            "COALESCE((SELECT action_cost_paise FROM outcomes WHERE payment_id = ?), 0), "
+            "'observed')",
+            (payment_id, amount_paise, hours_to_recovery, payment_id, payment_id),
+        )
+        self.conn.commit()
+
+    def outcome_split(self) -> List[Dict[str, Any]]:
+        """Observed versus simulated. The ratio is the project's honesty metric."""
+        return self.query(
+            "SELECT source, COUNT(*) AS n, SUM(recovered) AS recovered, "
+            "SUM(recovered_paise) AS paise FROM outcomes GROUP BY source"
+        )
+
     def already_executed(self, key: str) -> Optional[str]:
         row = self.conn.execute(
             "SELECT external_ref FROM executions WHERE idempotency_key = ?", (key,)
