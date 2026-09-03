@@ -19,9 +19,18 @@ from ..models import Decision, ExecutionResult, Outcome
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 
 
-def decision_id(decision: Decision) -> str:
-    """Stable id: the same decision written twice collides instead of duplicating."""
+def decision_id(decision: Decision, run_id: str = "") -> str:
+    """Stable id: the same decision in the same run collides instead of duplicating.
+
+    ``run_id`` is part of the hash, and has to be. Without it, replaying the same
+    batch under a different run id produces identical ids, and the
+    INSERT OR REPLACE silently *moves* the earlier run's decisions into the new
+    run rather than recording a second set. Two experiments then quietly become
+    one, which is exactly the kind of corruption that makes a comparison
+    meaningless while still looking plausible.
+    """
     raw = "|".join([
+        run_id,
         decision.payment_id,
         decision.policy_version,
         decision.decided_at.isoformat(),
@@ -105,7 +114,7 @@ class Ledger:
         return run_id
 
     def record_decision(self, run_id: str, decision: Decision) -> str:
-        did = decision_id(decision)
+        did = decision_id(decision, run_id)
         chosen = decision.chosen
         diag = decision.diagnosis
 

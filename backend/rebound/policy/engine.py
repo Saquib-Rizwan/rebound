@@ -69,9 +69,10 @@ def _price(
     delay_hours: float,
     channel: Channel,
     target_rail: Optional[Rail] = None,
+    calibrator=None,
 ) -> ActionCandidate:
     ev, p, gross, cash, annoy = economics.expected_value_paise(
-        payment, failure_class, intervention, delay_hours, channel
+        payment, failure_class, intervention, delay_hours, channel, calibrator
     )
     return ActionCandidate(
         intervention=intervention,
@@ -86,25 +87,38 @@ def _price(
     )
 
 
-def propose(payment: FailedPayment, diagnosis: Diagnosis, now: datetime) -> List[ActionCandidate]:
+def propose(payment: FailedPayment, diagnosis: Diagnosis, now: datetime,
+            calibrator=None) -> List[ActionCandidate]:
     """Every action worth pricing for this payment. Illegal ones are not proposed."""
     failure_class = diagnosis.failure_class
+
+    def price(*args, **kwargs):
+        return _price(*args, calibrator=calibrator, **kwargs)
+
     candidates: List[ActionCandidate] = [
         # Always available, always zero. This is the bar every other action must clear.
-        _price(payment, failure_class, InterventionType.SUPPRESS, 0.0, Channel.NONE)
+        price(payment, failure_class, InterventionType.SUPPRESS, 0.0, Channel.NONE)
     ]
 
     if failure_class in (FailureClass.UNKNOWN, FailureClass.SUSPECTED_FRAUD):
         candidates.append(
-            _price(payment, failure_class, InterventionType.ESCALATE_HUMAN, 0.0, Channel.NONE)
+            price(payment, failure_class, InterventionType.ESCALATE_HUMAN, 0.0, Channel.NONE)
         )
         return candidates
 
-    for delay in RETRY_DELAYS.get(failure_class, []):
+    retry_delays = list(RETRY_DELAYS.get(failure_class, []))
+    if payment.is_recurring or payment.rail is Rail.EMANDATE:
+        # A recurring debit cannot lawfully run before its pre-debit notification.
+        # Offer compliant windows rather than proposing options the rails will
+        # simply reject - the agent should know the rules, not discover them.
+        notice = config.PRE_DEBIT_NOTICE_HOURS
+        retry_delays = sorted({max(d, notice) for d in retry_delays} | {notice, notice + 24.0})
+
+    for delay in retry_delays:
         intervention = (
             InterventionType.RETRY_NOW if delay == 0.0 else InterventionType.RETRY_SCHEDULED
         )
-        candidates.append(_price(payment, failure_class, intervention, delay, Channel.NONE))
+        candidates.append(price(payment, failure_class, intervention, delay, Channel.NONE))
 
     # Contact actions, on every channel the customer has consented to. Where we are
     # currently inside quiet hours, also propose the same message timed to land the
@@ -118,17 +132,17 @@ def propose(payment: FailedPayment, diagnosis: Diagnosis, now: datetime) -> List
             continue
         for delay in contact_delays:
             candidates.append(
-                _price(payment, failure_class, InterventionType.NUDGE_LINK, delay, channel)
+                price(payment, failure_class, InterventionType.NUDGE_LINK, delay, channel)
             )
             if failure_class is FailureClass.MANDATE_INACTIVE:
                 candidates.append(
-                    _price(
+                    price(
                         payment, failure_class, InterventionType.REQUEST_REMANDATE, delay, channel
                     )
                 )
             else:
                 candidates.append(
-                    _price(
+                    price(
                         payment,
                         failure_class,
                         InterventionType.SWITCH_RAIL,
@@ -146,9 +160,15 @@ def decide(
     diagnosis: Diagnosis,
     state: AgentState,
     now: datetime,
+    calibrator=None,
 ) -> Decision:
-    """Score, filter, and choose. Returns a fully auditable Decision."""
-    candidates = propose(payment, diagnosis, now)
+    """Score, filter, and choose. Returns a fully auditable Decision.
+
+    ``calibrator`` is optional. Without it the agent uses the hand-written
+    efficacy priors and behaves deterministically. With it, efficacy comes from
+    posteriors fitted to observed outcomes, and small-ticket decisions explore.
+    """
+    candidates = propose(payment, diagnosis, now, calibrator)
 
     permitted: List[ActionCandidate] = []
     applied: List[str] = []

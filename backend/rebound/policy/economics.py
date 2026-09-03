@@ -140,14 +140,26 @@ def p_recover(
     intervention: InterventionType,
     delay_hours: float,
     channel: Channel = Channel.NONE,
+    calibrator=None,
 ) -> float:
-    """Probability the money arrives if we take this action. Zero if disallowed."""
+    """Probability the money arrives if we take this action. Zero if disallowed.
+
+    With a calibrator attached, the base efficacy comes from a posterior fitted to
+    observed outcomes rather than from the hand-written table below. Without one,
+    behaviour is unchanged - the constants remain the default so the system works
+    on day one, before any evidence exists.
+    """
     if intervention in (InterventionType.SUPPRESS, InterventionType.ESCALATE_HUMAN):
         return 0.0
 
-    base = ACTION_EFFICACY.get((failure_class, intervention))
-    if base is None:
-        return 0.0
+    if calibrator is not None:
+        base = calibrator.efficacy(failure_class, intervention, payment.amount)
+        if not base:
+            return 0.0
+    else:
+        base = ACTION_EFFICACY.get((failure_class, intervention))
+        if base is None:
+            return 0.0
 
     p = base * timing_multiplier(delay_hours, failure_class) * context_multiplier(payment)
     p *= CHANNEL_EFFICACY.get(channel, 1.0)
@@ -190,6 +202,7 @@ def expected_value_paise(
     intervention: InterventionType,
     delay_hours: float,
     channel: Channel,
+    calibrator=None,
 ) -> Tuple[float, float, float, float, float]:
     """Returns (ev, p, gross, cash_cost, annoyance) - all components, for the audit.
 
@@ -197,7 +210,7 @@ def expected_value_paise(
     not put INR 1,000 in the merchant's pocket, and deciding as if it did would
     justify spending far too much to chase it.
     """
-    p = p_recover(payment, failure_class, intervention, delay_hours, channel)
+    p = p_recover(payment, failure_class, intervention, delay_hours, channel, calibrator)
     gross = p * payment.amount * config.MERCHANT_MARGIN
     cash = action_cost_paise(intervention, channel)
     annoy = annoyance_paise(intervention, channel)

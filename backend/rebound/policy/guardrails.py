@@ -17,7 +17,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from .. import config
 from ..models import ActionCandidate, Diagnosis, FailedPayment
-from ..taxonomy import NEVER_CONTACT, NEVER_RETRY, Channel, FailureClass, InterventionType
+from ..taxonomy import (NEVER_CONTACT, NEVER_RETRY, Channel, FailureClass,
+                        InterventionType, Rail)
 
 CONTACT_ACTIONS = frozenset({
     InterventionType.NUDGE_LINK,
@@ -180,12 +181,58 @@ def g_unknown_class(payment, diagnosis, candidate, state, now):
     return "G10_unknown_class"
 
 
+def _is_recurring(payment: FailedPayment) -> bool:
+    return payment.is_recurring or payment.rail is Rail.EMANDATE
+
+
+def _afa_ceiling(payment: FailedPayment) -> int:
+    """Above this, RBI requires additional factor authentication again."""
+    if payment.merchant_id in config.AFA_EXEMPT_MERCHANTS:
+        return config.AFA_THRESHOLD_HIGH_PAISE
+    return config.AFA_THRESHOLD_PAISE
+
+
+def g_emandate_pre_debit_notice(payment, diagnosis, candidate, state, now):
+    """RBI: a recurring debit needs a pre-debit notification 24 hours ahead.
+
+    So an e-mandate retry cannot be immediate, however good the expected value
+    looks. The agent may still retry - it simply has to schedule far enough out
+    that the mandatory notification can precede the debit. This is why the policy
+    proposes long-delay retries for recurring payments at all.
+    """
+    if candidate.intervention not in RETRY_ACTIONS:
+        return None
+    if not _is_recurring(payment):
+        return None
+    if candidate.delay_hours < config.PRE_DEBIT_NOTICE_HOURS:
+        return "G11_pre_debit_notice"
+    return None
+
+
+def g_emandate_afa_threshold(payment, diagnosis, candidate, state, now):
+    """RBI: recurring debits above the AFA threshold need authentication again.
+
+    A silent machine retry cannot satisfy that - the customer has to be present.
+    So above the ceiling the only lawful recovery paths are ones that put the
+    customer back in an authenticated flow: a payment link, or re-mandating.
+    """
+    if candidate.intervention not in RETRY_ACTIONS:
+        return None
+    if not _is_recurring(payment):
+        return None
+    if payment.amount > _afa_ceiling(payment):
+        return "G12_afa_required"
+    return None
+
+
 ALL_GUARDRAILS: List[Guardrail] = [
     g_kill_switch,
     g_never_retry_class,
     g_never_contact_class,
     g_unknown_class,
     g_max_attempts,
+    g_emandate_pre_debit_notice,
+    g_emandate_afa_threshold,
     g_channel_consent,
     g_quiet_hours,
     g_contact_cooldown,
@@ -205,6 +252,12 @@ DESCRIPTIONS: Dict[str, str] = {
     "G06_contact_cooldown": "Customer contacted too recently",
     "G07_frequency_cap": "Customer weekly contact cap reached",
     "G08_min_ticket": "Ticket too small to justify contacting the customer",
+    "G11_pre_debit_notice":
+        "RBI e-mandate rules require a pre-debit notification 24 hours before a "
+        "recurring debit, so this retry cannot run any sooner",
+    "G12_afa_required":
+        "RBI e-mandate rules require additional factor authentication above the "
+        "threshold, so this recurring debit cannot be retried silently",
     "G09_daily_budget": "Merchant daily action budget would be exceeded",
     "G10_unknown_class": "Root cause unknown; only suppress or escalate is permitted",
 }

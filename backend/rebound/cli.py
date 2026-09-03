@@ -115,6 +115,15 @@ def cmd_run(args) -> int:
     ledger = Ledger(config.DATA_DIR / "rebound.sqlite3")
     executor = Executor(ledger, dry_run=not args.live)
 
+    calibrator = None
+    if args.calibrated:
+        from .policy.calibration import Calibrator
+
+        calibrator = Calibrator(explore=not args.no_explore, seed=args.seed)
+        loaded = calibrator.load(ledger)
+        print("calibration: {} posteriors loaded, exploration {}".format(
+            loaded, "off" if args.no_explore else "on"))
+
     run_id = args.run_id or "run_{}".format(payments[0].created_at.strftime("%Y%m%d") )
     ledger.start_run(
         run_id=run_id,
@@ -130,7 +139,7 @@ def cmd_run(args) -> int:
         # The agent picks a failure up shortly after it happens, not instantly.
         now = payment.created_at + timedelta(minutes=15)
         diagnosis = classifier.diagnose(payment)
-        decision = engine.decide(payment, diagnosis, state, now)
+        decision = engine.decide(payment, diagnosis, state, now, calibrator)
         engine.apply_to_state(decision, state)
         did = ledger.record_decision(run_id, decision)
         executor.execute(decision, did)
@@ -546,6 +555,111 @@ def cmd_insights(args) -> int:
     return 0
 
 
+def cmd_calibrate(args) -> int:
+    """Fit efficacy beliefs to observed outcomes, and show what moved.
+
+    The sensitivity sweep says the policy degrades when its beliefs are wrong.
+    This is the loop that stops them being wrong: replay every payment whose fate
+    is known, update the posteriors, and report the drift.
+    """
+    from .policy.calibration import Calibrator, observations_from_ledger
+    from .ledger.store import Ledger
+
+    ledger = Ledger(config.DATA_DIR / "rebound.sqlite3")
+    cal = Calibrator(explore=False)
+    loaded = cal.load(ledger)
+
+    observations = list(observations_from_ledger(ledger, args.run_id or None))
+    if not observations:
+        print("no observed outcomes to learn from yet.")
+        print("run `python rebound.py replay` to generate simulated outcomes,")
+        print("or recover a payment through a real Razorpay webhook.")
+        ledger.close()
+        return 1
+
+    n = cal.update_many(observations)
+    cal.save(ledger)
+
+    print("loaded {} stored posteriors, learned from {} outcomes".format(loaded, n))
+    drift = cal.drift()
+    if not drift:
+        print("no belief moved yet.")
+        ledger.close()
+        return 0
+
+    print()
+    header = "{:<44} {:>7} {:>10} {:>8} {:>7}".format(
+        "cause | action", "prior", "posterior", "shift", "n")
+    print(header)
+    print("-" * len(header))
+    for key, d in list(drift.items())[: args.top]:
+        arrow = "up  " if d["shift"] > 0 else "down"
+        print("{:<44} {:>7.3f} {:>10.3f} {:>7.3f} {} {:>5.0f}".format(
+            key, d["prior"], d["posterior"], d["shift"], arrow, d["observations"]))
+
+    print()
+    print("The largest shifts are where the hand-written priors were most wrong.")
+    print("Beliefs are stored in the ledger and reused on the next run.")
+    ledger.close()
+    return 0
+
+
+def cmd_replay(args) -> int:
+    """Simulate outcomes for decisions already in the ledger, so learning has data.
+
+    In production these arrive as `payment_link.paid` webhooks. Offline we play
+    the world model forward once per decision and write the results in as
+    `simulated`, clearly labelled, so the calibration loop can be demonstrated
+    without waiting for real traffic.
+    """
+    import random
+    from datetime import timedelta
+
+    from .ledger.store import Ledger
+    from .models import Outcome
+    from .sim.outcome_model import TrueWorld, WorldState
+    from .taxonomy import FailureClass, InterventionType
+    from .models import ActionCandidate
+
+    payments, truth = load_batch(config.DATA_DIR)
+    by_id = {p.payment_id: p for p in payments}
+
+    ledger = Ledger(config.DATA_DIR / "rebound.sqlite3")
+    rows = ledger.query(
+        "SELECT payment_id, intervention, delay_hours, channel FROM decisions "
+        "WHERE run_id = ?", (args.run_id,))
+    if not rows:
+        print("no decisions for run '{}'".format(args.run_id))
+        ledger.close()
+        return 1
+
+    world = TrueWorld(seed=args.seed)
+    state = WorldState()
+    outcomes = []
+    for row in rows:
+        payment = by_id.get(row["payment_id"])
+        if payment is None:
+            continue
+        from .taxonomy import Channel
+        action = ActionCandidate(
+            intervention=InterventionType(row["intervention"]),
+            delay_hours=row["delay_hours"] or 0.0,
+            channel=Channel(row["channel"] or "none"),
+        )
+        rng = random.Random("{}|{}".format(args.seed, payment.payment_id))
+        outcomes.append(world.simulate(
+            payment, truth[payment.payment_id], action, state, rng))
+
+    ledger.record_outcomes(args.run_id, outcomes, "simulated")
+    recovered = sum(1 for o in outcomes if o.recovered)
+    value = sum(o.recovered_amount_paise for o in outcomes)
+    print("replayed {} decisions from run '{}'".format(len(outcomes), args.run_id))
+    print("  recovered : {} payments, INR {:,.0f}".format(recovered, value / 100))
+    print("  written as source='simulated' - never mixed with observed recoveries")
+    ledger.close()
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -566,6 +680,11 @@ def main(argv=None) -> int:
     run.add_argument("--provider", choices=["auto", "offline"], default="auto")
     run.add_argument("--run-id", default="")
     run.add_argument("--notes", default="")
+    run.add_argument("--calibrated", action="store_true",
+                     help="use posteriors fitted from observed outcomes")
+    run.add_argument("--no-explore", action="store_true",
+                     help="with --calibrated, exploit only (no Thompson sampling)")
+    run.add_argument("--seed", type=int, default=0)
     run.add_argument("--live", action="store_true",
                      help="actually call the gateway (default is dry run)")
     run.set_defaults(func=cmd_run)
@@ -585,6 +704,16 @@ def main(argv=None) -> int:
     ep.add_argument("--sens-replications", type=int, default=12)
     ep.add_argument("--sigma", type=float, default=0.35)
     ep.set_defaults(func=cmd_eval_policy)
+
+    rp = sub.add_parser("replay", help="simulate outcomes for recorded decisions")
+    rp.add_argument("--run-id", default="demo")
+    rp.add_argument("--seed", type=int, default=101)
+    rp.set_defaults(func=cmd_replay)
+
+    cb = sub.add_parser("calibrate", help="fit efficacy beliefs to observed outcomes")
+    cb.add_argument("--run-id", default="")
+    cb.add_argument("--top", type=int, default=12)
+    cb.set_defaults(func=cmd_calibrate)
 
     ins = sub.add_parser("insights", help="systemic findings: what to fix, not just chase")
     ins.set_defaults(func=cmd_insights)

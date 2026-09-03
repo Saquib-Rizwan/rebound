@@ -83,6 +83,27 @@ QUIET_HOURS_START = int(os.getenv("REBOUND_QUIET_START", "21"))   # 21:00 IST
 QUIET_HOURS_END = int(os.getenv("REBOUND_QUIET_END", "9"))        # 09:00 IST
 MIN_TICKET_TO_CONTACT_PAISE = int(os.getenv("REBOUND_MIN_TICKET_PAISE", "5000"))
 
+# ------------------------------------- RBI Digital Payments E-Mandate Framework
+# Recurring debits in India are regulated, and the rules bind exactly what a
+# recovery agent wants to do. These are compliance limits, not tuning knobs.
+#
+#  * a pre-debit notification must reach the customer at least 24 hours before
+#    the debit, carrying merchant, amount, date, mandate reference and reason
+#  * the first transaction on a mandate requires additional factor authentication;
+#    later ones may skip AFA only below a threshold
+#  * above the threshold, AFA is required again - so the debit cannot be a silent
+#    retry, it has to go back through an authenticated flow
+#
+# Sources: RBI Digital Payments E-Mandate Framework (2026 consolidated directions).
+PRE_DEBIT_NOTICE_HOURS = float(os.getenv("REBOUND_PRE_DEBIT_NOTICE_H", "24"))
+AFA_THRESHOLD_PAISE = int(os.getenv("REBOUND_AFA_THRESHOLD_PAISE", "1500000"))       # INR 15,000
+# Insurance premiums, mutual fund subscriptions and credit card bills carry a
+# higher ceiling under the same framework.
+AFA_THRESHOLD_HIGH_PAISE = int(os.getenv("REBOUND_AFA_THRESHOLD_HIGH_PAISE", "10000000"))  # INR 1,00,000
+AFA_EXEMPT_MERCHANTS = set(
+    filter(None, os.getenv("REBOUND_AFA_EXEMPT_MERCHANTS", "").split(","))
+)
+
 # Unit economics for the expected-value model (paise).
 COST_PER_RETRY_PAISE = float(os.getenv("REBOUND_COST_RETRY", "200"))
 COST_PER_WHATSAPP_PAISE = float(os.getenv("REBOUND_COST_WHATSAPP", "88"))
