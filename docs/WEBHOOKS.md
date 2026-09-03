@@ -39,8 +39,7 @@ that produces a *measured* recovery rather than a modelled one.
 
 ```bash
 cd d:/razorpay
-export PYTHONPATH=backend
-python -m rebound serve
+python rebound.py serve
 ```
 
 Confirm it is healthy and that the secret is loaded:
@@ -121,7 +120,7 @@ So:
 
 ```bash
 # creates a real test-mode payment link and prints its URL
-python -m rebound verify-gateway
+python rebound.py verify-gateway
 ```
 
 Open the printed `https://rzp.io/...` link, choose **UPI**, enter
@@ -171,11 +170,11 @@ purpose and nothing in this repo merges them.
 For a recorded demo, `simulate-webhook` is the better choice:
 
 ```bash
-python -m rebound simulate-webhook                          # valid event
-python -m rebound simulate-webhook --bad-signature          # rejected
-python -m rebound simulate-webhook --event-id evt_1         # first delivery
-python -m rebound simulate-webhook --event-id evt_1         # deduplicated
-python -m rebound simulate-webhook --event payment_link.paid
+python rebound.py simulate-webhook                          # valid event
+python rebound.py simulate-webhook --bad-signature          # rejected
+python rebound.py simulate-webhook --event-id evt_1         # first delivery
+python rebound.py simulate-webhook --event-id evt_1         # deduplicated
+python rebound.py simulate-webhook --event payment_link.paid
 ```
 
 It signs with the same secret and goes through the same verification code, so it

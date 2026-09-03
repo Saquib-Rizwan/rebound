@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from .. import config
 from ..diagnose.classifier import HybridClassifier
@@ -94,9 +96,21 @@ def _handle_event(event: Dict[str, Any], event_id: str) -> None:
 
         elif event_type in webhooks.OUTCOME_EVENTS:
             recovered_id, amount = webhooks.parse_outcome(event)
-            if recovered_id:
+            # Only attribute a recovery to a payment we actually decided on.
+            # A success we cannot tie to a decision is somebody else's payment,
+            # and counting it would inflate our own results.
+            known = recovered_id and ledger.query(
+                "SELECT 1 FROM decisions WHERE payment_id = ? LIMIT 1", (recovered_id,)
+            )
+            if known:
                 # The one place a real, observed outcome enters the system.
                 ledger.record_observed_recovery(recovered_id, amount)
+            else:
+                ledger.record_webhook(
+                    event_id, event_type, True, json.dumps(event), recovered_id,
+                    handled=True, error="unattributed: no decision for this payment",
+                )
+                return
 
         ledger.record_webhook(
             event_id, event_type, True, json.dumps(event), payment_id, handled=True
@@ -200,6 +214,22 @@ def summary(run_id: str = "run_smoke") -> Dict[str, Any]:
     }
 
 
+@app.get("/reports/recovery")
+def recovery_report() -> Dict[str, Any]:
+    """The policy-comparison numbers, machine readable.
+
+    Written by `rebound.py eval-policy`. Served rather than recomputed because the
+    comparison takes minutes and the dashboard should not be able to trigger it.
+    """
+    path = config.REPORTS_DIR / "recovery.json"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="no recovery report yet - run: python rebound.py eval-policy",
+        )
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 @app.get("/webhooks/recent")
 def recent_webhooks(limit: int = 25) -> Dict[str, Any]:
     return {
@@ -209,3 +239,25 @@ def recent_webhooks(limit: int = 25) -> Dict[str, Any]:
             (limit,),
         )
     }
+
+
+# --------------------------------------------------------------- the dashboard
+# Mounted last, deliberately: a catch-all static mount registered earlier would
+# shadow every API route defined after it.
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+if STATIC_DIR.is_dir():
+    app.mount("/app", StaticFiles(directory=str(STATIC_DIR), html=True), name="dashboard")
+
+    @app.get("/")
+    def index() -> RedirectResponse:
+        return RedirectResponse(url="/app/")
+
+else:
+    @app.get("/")
+    def index() -> Dict[str, str]:
+        return {
+            "service": "rebound",
+            "dashboard": "not built - run: cd frontend && npm install && npm run build",
+            "health": "/health",
+        }

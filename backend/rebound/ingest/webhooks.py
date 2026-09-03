@@ -70,15 +70,30 @@ def _entity(event: Dict[str, Any], name: str) -> Dict[str, Any]:
 
 
 def event_payment_id(event: Dict[str, Any]) -> Optional[str]:
-    payment = _entity(event, "payment")
-    if payment.get("id"):
-        return payment["id"]
+    """The id of the payment this event is *about*, from our point of view.
+
+    Order matters here and getting it wrong is subtle. Paying a recovery link
+    creates a **new** payment with a new id - it is not the failed payment coming
+    back to life. So `payment_link.paid` carries two identities, and the one we
+    care about is the original failure, which we stamped into the link's
+    `reference_id` when we created it.
+
+    Reading `payment.id` first looks correct and silently files every recovery
+    against a payment we have never seen, orphaned from the decision that earned
+    it. See POSTMORTEM entry 6 - it only surfaced against live Razorpay.
+    """
     link = _entity(event, "payment_link")
-    # Our own links carry the original payment id, so a payment on a link can be
-    # attributed back to the failure that caused us to send it.
     reference = link.get("reference_id") or ""
     if reference.startswith("rebound_"):
         return reference[len("rebound_"):]
+
+    payment = _entity(event, "payment")
+    notes = payment.get("notes") or {}
+    # Same idea for a captured payment carrying our marker in its notes.
+    if notes.get("retry_of"):
+        return str(notes["retry_of"])
+    if payment.get("id"):
+        return payment["id"]
     return None
 
 

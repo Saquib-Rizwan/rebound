@@ -76,7 +76,9 @@ class MockGateway:
     def _ref(self, prefix: str, payment_id: str) -> str:
         return prefix + hashlib.sha256(payment_id.encode("utf-8")).hexdigest()[:14]
 
-    def create_payment_link(self, payment_id, amount_paise, description, expire_in_hours):
+    def create_payment_link(
+        self, payment_id, amount_paise, description, expire_in_hours, notes=None
+    ):
         if self._rng(payment_id).random() < self.failure_rate:
             return GatewayResult(ok=False, error="mock_gateway_unavailable")
         ref = self._ref("plink_", payment_id)
@@ -121,8 +123,16 @@ class RazorpayTestGateway:
         except Exception as exc:  # noqa: BLE001 - network layer, many exception types
             return GatewayResult(ok=False, error="{}: {}".format(type(exc).__name__, exc), live=True)
 
-    def create_payment_link(self, payment_id, amount_paise, description, expire_in_hours):
+    def create_payment_link(
+        self, payment_id, amount_paise, description, expire_in_hours, notes=None
+    ):
         expire_by = int((datetime.now() + timedelta(hours=max(1.0, expire_in_hours))).timestamp())
+        # Razorpay copies link notes onto the payment made against the link, which
+        # is how merchant-side context (consent, customer id, LTV) reaches the
+        # agent when a payment on this link later fails. Razorpay itself never
+        # supplies that data - it belongs to the merchant.
+        payload_notes = {"source": "rebound", "original_payment_id": payment_id}
+        payload_notes.update(notes or {})
         return self._post("/payment_links", {
             "amount": amount_paise,
             "currency": "INR",
@@ -131,7 +141,7 @@ class RazorpayTestGateway:
             "reference_id": "rebound_" + payment_id,
             "notify": {"sms": False, "email": False},   # we own the messaging
             "reminder_enable": False,
-            "notes": {"source": "rebound", "original_payment_id": payment_id},
+            "notes": payload_notes,
         })
 
     def schedule_retry(self, payment_id, order_id, amount_paise, when):

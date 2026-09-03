@@ -161,3 +161,49 @@ Two things this cost us and one it bought:
 - It produced the most useful sentence in the whole report: we can now say exactly
   where this approach stops working, and why calibration against observed outcomes
   is the thing that has to happen before anyone trusts it with a budget.
+
+---
+
+## 6. Every recovery was being filed against the wrong payment
+
+**Live webhook testing. Severity: the outcome data was silently worthless.**
+
+Paying a recovery link fires `payment_link.paid`. That event carries two payment
+identities, and we picked the wrong one.
+
+The bug is that paying a link does not resurrect the failed payment - it creates a
+**brand new payment with a new id**. So the event looks like this:
+
+```
+failed payment we diagnosed and acted on : pay_TXTJl4MltsmWKX
+new payment created by paying the link   : pay_TXTLJT9urehMCF
+```
+
+`event_payment_id` read `payload.payment.entity.id` first, which is the *new* one.
+Every observed recovery was therefore written against a payment id the system had
+never seen, orphaned from the decision that earned it:
+
+```
+pay_TXTLJT9urehMCF   INR 499.00   observed   linked to a decision: False
+```
+
+No error, no exception, a perfectly plausible-looking row in the outcomes table.
+It would have quietly destroyed the only measured data in the project - we would
+have had a growing pile of recoveries that could never be attributed to any action
+the agent took, while the recoveries the agent actually caused looked like zero.
+
+**The fix.** Read the link's `reference_id` first. We stamp `rebound_<original id>`
+into every link we create precisely so a payment on it can be traced back, and the
+code just was not consulting it. Also added a guard: an outcome that cannot be
+resolved to a payment we made a decision about is recorded as `unattributed`
+rather than becoming an outcome row. Counting a stranger's successful payment as
+our own recovery is the single easiest way to fake a good result, including by
+accident.
+
+**Why this one matters most.** Our own `simulate-webhook` command constructed the
+event with `reference_id` and `payment.id` set to the *same* value, because that
+seemed natural when writing a fixture. So the bug was invisible in every simulated
+test and appeared within seconds of the first real Razorpay event. The fixture
+encoded an assumption about the world instead of testing it - which is the whole
+argument for having done the live integration rather than stopping at the
+simulator.

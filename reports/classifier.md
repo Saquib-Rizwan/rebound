@@ -14,9 +14,9 @@ Scored against held-out labels the classifier never sees (`data/labels.json`, wr
 
 | Arm | Accuracy | Accuracy when answered | Coverage | Macro F1 | Error cost | Model rows | Net calls | LLM cost | Wall time |
 |---|---|---|---|---|---|---|---|---|---|
-| rules_only | 92.5% | 100.0% | 92.5% | 0.951 | INR 4,040 | 0 | 0 | $0.0000 | 0.01s |
-| model_only | 96.7% | 96.7% | 100.0% | 0.973 | INR 55 | 150 | 93 | $0.0067 | 336.96s |
-| hybrid | 96.8% | 96.8% | 100.0% | 0.978 | INR 116 | 30 | 0 | $0.0000 | 0.03s |
+| rules_only | 92.5% | 100.0% | 92.5% | 0.951 | INR 4,040 | 0 | 0 | $0.0000 | 0.00s |
+| model_only | 96.7% | 96.7% | 100.0% | 0.973 | INR 55 | 150 | 0 | $0.0000 | 0.02s |
+| hybrid | 96.8% | 96.8% | 100.0% | 0.978 | INR 116 | 30 | 0 | $0.0000 | 0.01s |
 
 `Model rows` is how many payments were routed to the model. `Net calls` is how many of those actually hit the network - the rest were served from the on-disk response cache, which is why a re-run costs nothing.
 
@@ -29,9 +29,9 @@ Error cost is the modelled rupee consequence of the mistakes each arm makes, not
 | Set | Arm | Accuracy | Coverage | Macro F1 | Error cost | Model rows |
 |---|---|---|---|---|---|---|
 | paraphrase | rules_only | 0.0% | 0.7% | 0.000 | INR 12,469 | 0 |
-| paraphrase | hybrid | 66.0% | 70.7% | 0.594 | INR 4,185 | 149 |
+| paraphrase | hybrid | 92.0% | 100.0% | 0.901 | INR 261 | 149 |
 | noise | rules_only | 40.0% | 40.0% | 0.529 | INR 6,827 | 0 |
-| noise | hybrid | 86.0% | 96.7% | 0.904 | INR 435 | 90 |
+| noise | hybrid | 88.7% | 99.3% | 0.917 | INR 527 | 90 |
 
 This is where the model earns its place. Rule coverage collapses on unseen wording because high-precision anchors are, by construction, brittle to rewording - and the pipeline responds by routing far more rows to the model rather than guessing.
 

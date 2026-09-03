@@ -223,7 +223,10 @@ def cmd_eval_policy(args) -> int:
     from .diagnose.classifier import HybridClassifier
     from .diagnose.llm import OfflineProvider, TailClassifier
     from .sim import baselines
-    from .sim.evaluate_policy import compare, markdown_report, sensitivity, write_report
+    import json
+
+    from .sim.evaluate_policy import (as_json, compare, markdown_report,
+                                      sensitivity, write_report)
 
     payments, truth = load_batch(config.DATA_DIR)
     if args.sample:
@@ -251,6 +254,12 @@ def cmd_eval_policy(args) -> int:
 
     report = markdown_report(summaries, sens, args.replications, args.sigma, tail.provider.name)
     out = write_report(config.REPORTS_DIR / "recovery.md", report)
+    # Same numbers, machine readable, for the dashboard.
+    (config.REPORTS_DIR / "recovery.json").write_text(
+        json.dumps(as_json(summaries, sens, args.replications, args.sigma,
+                           tail.provider.name), indent=2),
+        encoding="utf-8",
+    )
 
     base = summaries["do_nothing"].mean_net()
     print()
@@ -361,8 +370,11 @@ def cmd_simulate_webhook(args) -> int:
                     "amount_paid": args.amount,
                     "status": "paid",
                 }},
+                # A DIFFERENT id on purpose. Paying a link creates a new payment;
+                # using the same id here made a real attribution bug invisible in
+                # every simulated test. See POSTMORTEM entry 6.
                 "payment": {"entity": {
-                    "id": args.payment_id,
+                    "id": "pay_new" + args.payment_id[-8:],
                     "amount": args.amount,
                     "status": "captured",
                 }},
@@ -395,6 +407,59 @@ def cmd_simulate_webhook(args) -> int:
     return 0 if resp.status_code < 400 else 3
 
 
+def cmd_demo_link(args) -> int:
+    """Creates a seed payment link carrying the context a merchant would hold.
+
+    Razorpay knows a payment failed. It does not know whether the customer agreed
+    to be messaged on WhatsApp, what they are worth, or how many times they have
+    paid before - that is the merchant's data. In production it comes from their
+    CRM. Here we stamp it into the link's notes, which Razorpay copies onto any
+    payment made against the link, so a failure on this link reaches the agent
+    fully specified rather than consent-less.
+
+    Without this the agent can only retry silently or stay quiet, because no
+    consent means no contact. That is correct behaviour, and it is also why the
+    end-to-end link-recovery path cannot be demonstrated from a bare test link.
+    """
+    from .ingest.razorpay_client import MockGateway, build_gateway
+
+    gateway = build_gateway()
+    if isinstance(gateway, MockGateway):
+        print("No Razorpay credentials found. Set RAZORPAY_KEY_ID/_SECRET in .env.")
+        return 1
+    if not str(config.RAZORPAY_KEY_ID).startswith("rzp_test_"):
+        print("REFUSING: key id does not start with rzp_test_.")
+        return 2
+
+    result = gateway.create_payment_link(
+        payment_id=args.reference,
+        amount_paise=args.amount,
+        description="Rebound demo order - test mode, no money moves",
+        expire_in_hours=48.0,
+        notes={
+            "merchant_id": "mrch_d2c_apparel",
+            "customer_id": "cust_demo_001",
+            "consent_whatsapp": "true",
+            "consent_sms": "true",
+            "consent_email": "true",
+            "prior_successes": "6",
+            "ltv_paise": "1450000",
+        },
+    )
+    if not result.ok:
+        print("FAILED: {}".format(result.error))
+        return 3
+
+    print("seed link created, carrying merchant context")
+    print("  link id  : {}".format(result.reference))
+    print("  url      : {}".format(result.short_url))
+    print("  amount   : INR {:,.2f}".format(args.amount / 100))
+    print()
+    print("Pay it with Netbanking -> Failure. The resulting payment.failed will")
+    print("carry consent, so the agent can choose to contact the customer.")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -421,6 +486,11 @@ def main(argv=None) -> int:
 
     vg = sub.add_parser("verify-gateway", help="make one real Razorpay test-mode call")
     vg.set_defaults(func=cmd_verify_gateway)
+
+    dl = sub.add_parser("demo-link", help="seed link carrying merchant-side context")
+    dl.add_argument("--amount", type=int, default=349900)
+    dl.add_argument("--reference", default="demoseed")
+    dl.set_defaults(func=cmd_demo_link)
 
     ep = sub.add_parser("eval-policy", help="rebound vs naive baselines on simulated outcomes")
     ep.add_argument("--sample", type=int, default=0)

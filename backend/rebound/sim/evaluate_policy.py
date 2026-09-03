@@ -335,3 +335,66 @@ def write_report(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def as_json(
+    summaries: Dict[str, PolicySummary],
+    sens: Dict[float, Dict[str, Dict[str, float]]],
+    replications: int,
+    sigma: float,
+    provider: str,
+) -> Dict[str, object]:
+    """Machine-readable results, so the dashboard reads numbers rather than prose."""
+    agent = summaries["rebound"]
+    nothing = summaries["do_nothing"]
+    best_naive = max(
+        (summaries[n] for n in ("retry_all", "blind_24h", "nudge_all")),
+        key=lambda s: s.mean_net(),
+    )
+    lo, hi = agent.uplift_interval(nothing)
+
+    return {
+        "meta": {
+            "payments": agent.n_payments,
+            "at_risk_paise": agent.at_risk_paise,
+            "replications": replications,
+            "sigma": sigma,
+            "provider": provider,
+            "simulated": True,
+        },
+        "policies": [
+            {
+                "name": name,
+                "recovery_rate": summaries[name].recovery_rate,
+                "recovered_paise": summaries[name].mean("recovered_paise"),
+                "cost_paise": summaries[name].mean("action_cost_paise"),
+                "net_paise": summaries[name].mean_net(),
+                "contacts": summaries[name].mean("contacts"),
+                "churned": summaries[name].mean("churned"),
+                "suppressed": summaries[name].mean("suppressed"),
+            }
+            for name in baselines.POLICY_ORDER
+        ],
+        "headline": {
+            "uplift_vs_nothing_paise": agent.mean_net() - nothing.mean_net(),
+            "uplift_ci_low_paise": lo,
+            "uplift_ci_high_paise": hi,
+            "win_rate_vs_nothing": agent.beats(nothing),
+            "best_naive": best_naive.name,
+            "uplift_vs_best_naive_paise": agent.mean_net() - best_naive.mean_net(),
+            "win_rate_vs_best_naive": agent.beats(best_naive),
+        },
+        "sensitivity": [
+            {
+                "sigma": sig,
+                "net": {n: sens[sig][n]["net"] for n in baselines.POLICY_ORDER},
+                "agent_rank": sorted(
+                    sens[sig].items(), key=lambda kv: -kv[1]["net"]
+                ).index(
+                    next(kv for kv in sorted(sens[sig].items(), key=lambda kv: -kv[1]["net"])
+                         if kv[0] == "rebound")
+                ) + 1,
+            }
+            for sig in sorted(sens)
+        ],
+    }
