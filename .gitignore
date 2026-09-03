@@ -1,10 +1,23 @@
+# python
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
+.pytest_tmp/
+
+# secrets - never commit
 .env
+
+# node
 node_modules/
 dist/
-.pytest_cache/
+
+# runtime artefacts: local logs, tunnel URLs, sqlite journals, cached LLM replies.
+# None of these belong in the repo, and the tunnel log records local IP addresses.
+reports/_*.log
+reports/_*.txt
 *.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
 data/llm_cache/

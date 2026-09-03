@@ -1,0 +1,42 @@
+name: quality gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      # No API keys are configured for CI on purpose. Every gate below has to
+      # hold with the offline classifier, so the build measures the floor the
+      # system keeps with no model at all - and a failing key can never be the
+      # reason the build is green.
+      - name: Safety invariants
+        run: python -m pytest tests/test_safety.py -q
+
+      - name: Adversarial and webhook security
+        run: python -m pytest tests/test_security.py -q
+
+      - name: Quality gates
+        run: python -m pytest tests/test_quality.py -q
+
+      - name: Ledger and idempotency
+        run: python -m pytest tests/test_ledger.py -q
+
+      - name: End to end agent pass
+        run: |
+          python rebound.py generate
+          python rebound.py run --provider offline --run-id ci
+          python rebound.py insights

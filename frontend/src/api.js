@@ -18,6 +18,8 @@ export const api = {
   decision: (paymentId) => get(`/decisions/${encodeURIComponent(paymentId)}`),
   webhooks: () => get("/webhooks/recent?limit=12"),
   recovery: () => get("/reports/recovery"),
+  insights: () => get("/insights"),
+  scheduled: () => get("/scheduled"),
 };
 
 export const rupees = (paise, digits = 0) =>

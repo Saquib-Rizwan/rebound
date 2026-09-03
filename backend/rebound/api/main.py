@@ -230,6 +230,34 @@ def recovery_report() -> Dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@app.get("/insights")
+def insights() -> Dict[str, Any]:
+    """Systemic findings. Written by `rebound.py insights`."""
+    path = config.REPORTS_DIR / "insights.json"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404, detail="run: python rebound.py insights"
+        )
+    return {"insights": json.loads(path.read_text(encoding="utf-8"))}
+
+
+@app.get("/scheduled")
+def scheduled() -> Dict[str, Any]:
+    """The queue of promised-for-later actions, and what happened to them."""
+    ledger = get_ledger()
+    return {
+        "pending": ledger.query(
+            "SELECT intervention, COUNT(*) AS n, MIN(scheduled_for) AS next_due "
+            "FROM executions WHERE fired_at IS NULL AND scheduled_for IS NOT NULL "
+            "GROUP BY intervention ORDER BY n DESC"
+        ),
+        "fired": ledger.query(
+            "SELECT fire_result, COUNT(*) AS n FROM executions "
+            "WHERE fired_at IS NOT NULL GROUP BY fire_result ORDER BY n DESC LIMIT 12"
+        ),
+    }
+
+
 @app.get("/webhooks/recent")
 def recent_webhooks(limit: int = 25) -> Dict[str, Any]:
     return {

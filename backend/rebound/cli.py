@@ -460,6 +460,92 @@ def cmd_demo_link(args) -> int:
     return 0
 
 
+def cmd_scheduler(args) -> int:
+    """Fires scheduled recovery actions whose time has come."""
+    import time as _time
+    from datetime import datetime, timedelta
+
+    from .execute.scheduler import Scheduler
+    from .ledger.store import Ledger
+
+    ledger = Ledger(config.DATA_DIR / "rebound.sqlite3")
+    sched = Scheduler(ledger, dry_run=not args.live)
+
+    print("scheduler  dry_run={}  gateway={}".format(sched.dry_run, sched.gateway.name))
+    pending = sched.pending_summary()
+    if not pending:
+        print("nothing scheduled.")
+        ledger.close()
+        return 0
+
+    print("\npending queue")
+    for row in pending:
+        print("  {:<20} {:>5} next due {}".format(
+            row["intervention"], row["n"], row["next_due"]))
+
+    # The batch is dated, so "now" in batch time is what makes anything due.
+    now = datetime.now() if not args.at else datetime.fromisoformat(args.at)
+    if args.all_due:
+        now = datetime(2100, 1, 1)
+
+    rounds = args.rounds
+    total_fired = total_cancelled = 0
+    while rounds > 0:
+        results = sched.tick(now=now, limit=args.limit)
+        if not results:
+            print("\nnothing due at {}".format(now.isoformat(timespec="seconds")))
+            break
+        fired = [r for r in results if r.fired]
+        cancelled = [r for r in results if not r.fired]
+        total_fired += len(fired)
+        total_cancelled += len(cancelled)
+
+        print("\nfired {}, cancelled {}".format(len(fired), len(cancelled)))
+        reasons = {}
+        for r in cancelled:
+            reasons[r.detail] = reasons.get(r.detail, 0) + 1
+        for reason, n in sorted(reasons.items(), key=lambda kv: -kv[1]):
+            print("  {:<44} {}".format(reason, n))
+        for r in fired[:5]:
+            print("  fired {:<20} {:<18} {}".format(r.payment_id, r.intervention, r.detail))
+
+        rounds -= 1
+        if rounds > 0 and args.interval:
+            _time.sleep(args.interval)
+
+    print("\ntotal fired {}, total cancelled {}".format(total_fired, total_cancelled))
+    left = sched.pending_summary()
+    print("still pending: {}".format(sum(r["n"] for r in left) if left else 0))
+    ledger.close()
+    return 0
+
+
+def cmd_insights(args) -> int:
+    """Systemic findings: what to fix, not just what to chase."""
+    import json
+
+    from .analytics.insights import analyse, markdown
+
+    payments, truth = load_batch(config.DATA_DIR)
+    found = analyse(payments, truth)
+
+    config.REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    (config.REPORTS_DIR / "insights.md").write_text(
+        markdown(found, payments), encoding="utf-8")
+    (config.REPORTS_DIR / "insights.json").write_text(
+        json.dumps([i.as_dict() for i in found], indent=2), encoding="utf-8")
+
+    print("{} findings across {} payments\n".format(len(found), len(payments)))
+    for i, ins in enumerate(found, 1):
+        print("{}. [{}] {}".format(i, ins.severity.upper(), ins.title))
+        print("   INR {:,.0f} at stake ({:.0%} of failed value)".format(
+            ins.value_paise / 100, ins.share))
+        print("   -> {}".format(ins.recommendation[:150]))
+        print()
+    print("reports/insights.md and reports/insights.json written")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -499,6 +585,18 @@ def main(argv=None) -> int:
     ep.add_argument("--sens-replications", type=int, default=12)
     ep.add_argument("--sigma", type=float, default=0.35)
     ep.set_defaults(func=cmd_eval_policy)
+
+    ins = sub.add_parser("insights", help="systemic findings: what to fix, not just chase")
+    ins.set_defaults(func=cmd_insights)
+
+    sc = sub.add_parser("scheduler", help="fire scheduled recovery actions that are due")
+    sc.add_argument("--live", action="store_true", help="actually call the gateway")
+    sc.add_argument("--at", default="", help="treat this ISO timestamp as now")
+    sc.add_argument("--all-due", action="store_true", help="fire everything regardless of time")
+    sc.add_argument("--limit", type=int, default=200)
+    sc.add_argument("--rounds", type=int, default=1)
+    sc.add_argument("--interval", type=float, default=0.0, help="seconds between rounds")
+    sc.set_defaults(func=cmd_scheduler)
 
     sv = sub.add_parser("serve", help="run the webhook receiver and read API")
     sv.add_argument("--host", default="127.0.0.1")

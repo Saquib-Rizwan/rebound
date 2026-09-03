@@ -404,6 +404,12 @@ def _parse_verdict(text: str) -> LLMVerdict:
         except json.JSONDecodeError:
             return _empty_verdict()
 
+    # Valid JSON is not the same as the shape we asked for. A model that returns
+    # a list, a string or a number must degrade to UNKNOWN, not raise - this is
+    # the fallback path, so it is the last place that may crash.
+    if not isinstance(data, dict):
+        return _empty_verdict()
+
     raw_class = str(data.get("failure_class", "")).strip().lower()
     if raw_class not in VALID_CLASSES:
         return LLMVerdict(

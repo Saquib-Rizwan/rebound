@@ -58,7 +58,28 @@ class Ledger:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA_PATH.read_text(encoding="utf-8"))
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        """Add columns that postdate an existing database file.
+
+        CREATE TABLE IF NOT EXISTS silently does nothing when the table already
+        exists, so a schema change would not reach anyone who had run the project
+        before. Cheap forward migration beats telling people to delete their data.
+        """
+        have = {r[1] for r in self.conn.execute("PRAGMA table_info(executions)")}
+        for column, ddl in (("fired_at", "TEXT"), ("fire_result", "TEXT")):
+            if column not in have:
+                self.conn.execute(
+                    "ALTER TABLE executions ADD COLUMN {} {}".format(column, ddl)
+                )
+        # Created here rather than in schema.sql: a partial index referencing
+        # fired_at cannot exist until the column does.
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_executions_due "
+            "ON executions(scheduled_for) WHERE fired_at IS NULL"
+        )
 
     def close(self) -> None:
         self.conn.close()

@@ -91,7 +91,12 @@ CREATE TABLE IF NOT EXISTS executions (
     scheduled_for     TEXT,
     error             TEXT,
     dry_run           INTEGER NOT NULL,
-    executed_at       TEXT NOT NULL
+    executed_at       TEXT NOT NULL,
+    -- A scheduled action is DECIDED at executed_at and DISPATCHED at fired_at.
+    -- Keeping them apart is what makes "retry in 1h" a promise the system can be
+    -- held to, rather than a timestamp nobody ever acts on.
+    fired_at          TEXT,
+    fire_result       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_executions_payment ON executions(payment_id);
