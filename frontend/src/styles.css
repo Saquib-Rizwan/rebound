@@ -118,10 +118,11 @@ body {
 @media (max-width: 1180px) { .split { grid-template-columns: 1fr; } }
 
 /* ─────────────────────────────── chips / filters */
-.chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+.chips { display: flex; gap: 5px; flex-wrap: wrap; padding: 11px 16px; border-bottom: 1px solid var(--line); }
 .chips button {
   background: var(--panel-2); border: 1px solid var(--line); color: var(--dim);
-  font: 500 11px var(--mono); padding: 5px 9px; border-radius: 5px; cursor: pointer;
+  font: 500 10.5px var(--mono); padding: 5px 8px; border-radius: 5px; cursor: pointer;
+  white-space: nowrap;
 }
 .chips button:hover { color: var(--muted); border-color: var(--line-2); }
 .chips button.on { background: var(--accent-dim); border-color: #2f4a75; color: #9dc0ff; }
@@ -217,7 +218,15 @@ tbody tr.on { background: #121c2e; box-shadow: inset 2px 0 0 var(--accent); }
 .ok  { color: var(--good); font: 10.5px var(--mono); }
 .err { color: var(--bad); font: 10.5px var(--mono); }
 
-.scroll { max-height: 620px; overflow: auto; }
+.scroll { max-height: 560px; overflow: auto; }
+/* The table is scrollable; without this the clipped final row reads as a
+   rendering bug rather than as more content below. */
+.scroll-fade { position: relative; }
+.scroll-fade::after {
+  content: ""; position: absolute; left: 1px; right: 10px; bottom: 0; height: 34px;
+  background: linear-gradient(to bottom, transparent, var(--panel));
+  pointer-events: none; border-radius: 0 0 var(--r) var(--r);
+}
 .scroll::-webkit-scrollbar { width: 10px; height: 10px; }
 .scroll::-webkit-scrollbar-thumb { background: #232833; border-radius: 5px; border: 3px solid var(--panel); }
 .scroll::-webkit-scrollbar-track { background: transparent; }

@@ -20,7 +20,17 @@ function Kpi({ label, value, sub, positive }) {
 }
 
 export default function App() {
-  const [tab, setTab] = useState("decisions");
+  // Tabs live in the URL hash so a specific view can be linked to directly -
+  // useful for a demo that needs to jump straight to the results.
+  const [tab, setTab] = useState(
+    () => (window.location.hash || "").replace("#", "") || "decisions"
+  );
+  useEffect(() => {
+    const onHash = () =>
+      setTab((window.location.hash || "").replace("#", "") || "decisions");
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const [health, setHealth] = useState(null);
   const [runs, setRuns] = useState([]);
   const [runId, setRunId] = useState("");
@@ -104,7 +114,8 @@ export default function App() {
 
       <div className="tabs">
         {TABS.map(([key, label]) => (
-          <button key={key} className={tab === key ? "on" : ""} onClick={() => setTab(key)}>
+          <button key={key} className={tab === key ? "on" : ""}
+                  onClick={() => { window.location.hash = key; setTab(key); }}>
             {label}
             {key === "decisions" && rows.length > 0 && <span className="count">{rows.length}</span>}
             {key === "insights" && insights && <span className="count">{insights.length}</span>}

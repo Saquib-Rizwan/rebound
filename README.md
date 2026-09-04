@@ -34,6 +34,11 @@ On a batch of **400 failed payments carrying ₹9,80,384**:
 | Customers contacted | **148**, against 399 for a message-everyone policy |
 | Total spend to achieve it | **₹716** |
 
+![Rebound dashboard](docs/img/dashboard.png)
+
+*Every decision, and — on the right — the full audit trail: every option the agent
+priced, its expected value, and the guardrail that stopped the ones it skipped.*
+
 **These are simulated outcomes.** No real payment was recovered. See
 [Is this real?](#is-this-real) — it is the first thing you should check.
 

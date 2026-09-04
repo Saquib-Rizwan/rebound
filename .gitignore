@@ -21,3 +21,4 @@ reports/_*.txt
 *.sqlite3-shm
 *.sqlite3-wal
 data/llm_cache/
+reports/shots/

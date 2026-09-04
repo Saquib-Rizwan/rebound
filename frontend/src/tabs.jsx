@@ -31,7 +31,7 @@ function Why({ paymentId }) {
     );
   }
   if (err) return <div className="blank">{err}</div>;
-  if (!d) return <div className="blank">Loading…</div>;
+  if (!d) return <div className="blank" style={{ padding: "24px 20px" }}>Loading…</div>;
 
   const dec = d.decision;
   return (
@@ -101,6 +101,15 @@ export function Decisions({ runId, rows }) {
   const [sel, setSel] = useState(null);
   const shown = filter ? rows.filter((r) => r.intervention === filter) : rows;
 
+  // Select the largest payment automatically. The audit trail is the most
+  // interesting thing here and an empty panel on first load hides it behind a
+  // click nobody knows to make.
+  useEffect(() => {
+    if (shown.length && !shown.some((r) => r.payment_id === sel)) {
+      setSel(shown[0].payment_id);
+    }
+  }, [shown, sel]);
+
   return (
     <div className="split">
       <div className="panel">
@@ -115,7 +124,7 @@ export function Decisions({ runId, rows }) {
             </button>
           ))}
         </div>
-        <div className="scroll">
+        <div className="scroll scroll-fade">
           {shown.length === 0
             ? <div className="blank">Nothing here. Run <code>python rebound.py run --run-id demo</code></div>
             : (
