@@ -113,3 +113,40 @@ NEVER_CONTACT: FrozenSet[FailureClass] = frozenset({
 
 def profile(fc: FailureClass) -> ClassProfile:
     return PROFILES[fc]
+
+
+# Human-readable names for anything that reaches a person. The enum values above
+# stay as they are - they are stable identifiers for the database, the API and the
+# audit trail. These are only for prose a merchant or an operator reads.
+HUMAN_CAUSE: Dict[FailureClass, str] = {
+    FailureClass.INSUFFICIENT_FUNDS: "insufficient funds",
+    FailureClass.BANK_DOWNTIME: "bank downtime",
+    FailureClass.AUTH_DROPOFF: "checkout drop-off",
+    FailureClass.EXPIRED_INSTRUMENT: "an expired card",
+    FailureClass.INVALID_INSTRUMENT: "an invalid account",
+    FailureClass.LIMIT_EXCEEDED: "a transaction limit",
+    FailureClass.RISK_DECLINE_ISSUER: "a bank decline",
+    FailureClass.SUSPECTED_FRAUD: "suspected fraud",
+    FailureClass.MANDATE_INACTIVE: "an inactive mandate",
+    FailureClass.TECHNICAL_ERROR: "a technical error",
+    FailureClass.CUSTOMER_CANCELLED: "the customer cancelling",
+    FailureClass.UNKNOWN: "an unclear cause",
+}
+
+HUMAN_SOURCE = {
+    "rules": "rules",
+    "gemini": "the AI model",
+    "anthropic": "the AI model",
+    "offline_tfidf": "the offline classifier",
+    "rules_abstain": "rules, which abstained",
+}
+
+
+def human_cause(fc: FailureClass) -> str:
+    return HUMAN_CAUSE.get(fc, fc.value.replace("_", " "))
+
+
+def human_source(source: str) -> str:
+    base = (source or "").split("+")[0]
+    label = HUMAN_SOURCE.get(base, base.replace("_", " "))
+    return label + (" after sanitising" if "+" in (source or "") else "")

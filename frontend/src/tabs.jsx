@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, pct, rupees } from "./api";
+import * as L from "./labels";
 
 const FILTERS = [
   "", "retry_scheduled", "retry_now", "nudge_link",
@@ -43,13 +44,18 @@ function Why({ paymentId }) {
         <dt>Amount</dt><dd>{rupees(dec.amount_paise, 2)}</dd>
         <dt>Root cause</dt>
         <dd>
-          {dec.failure_class}
+          <span title={dec.failure_class}>{L.cause(dec.failure_class)}</span>
           <div className="by">
             {pct(dec.confidence, 0)} confidence · decided by{" "}
-            <span className={sourceClass(dec.diag_source)}>{dec.diag_source}</span>
+            <span className={sourceClass(dec.diag_source)}>{L.source(dec.diag_source)}</span>
           </div>
         </dd>
-        <dt>Decision</dt><dd><span className={"tag " + dec.intervention}>{dec.intervention}</span></dd>
+        <dt>Decision</dt>
+        <dd>
+          <span className={"tag " + dec.intervention} title={dec.intervention}>
+            {L.action(dec.intervention)}
+          </span>
+        </dd>
         {dec.rationale && (
           <><dt>Reasoning</dt><dd style={{ color: "var(--muted)", fontSize: 12 }}>{dec.rationale}</dd></>
         )}
@@ -67,15 +73,19 @@ function Why({ paymentId }) {
           {d.considered.map((c, i) => (
             <tr key={i}>
               <td>
-                {c.intervention}
-                {c.channel && c.channel !== "none" && <span className="by"> via {c.channel}</span>}
+                <span title={c.intervention}>{L.action(c.intervention)}</span>
+                {c.channel && c.channel !== "none" && (
+                  <span className="by"> via {L.channel(c.channel)}</span>
+                )}
               </td>
               <td className="num">{c.delay_hours ? `${c.delay_hours}h` : "—"}</td>
               <td className="num">{c.p_recover ? c.p_recover.toFixed(2) : "—"}</td>
               <td className="num">{rupees(c.ev_paise)}</td>
               <td>
                 {c.blocked_by
-                  ? <span className="verdict-block">{c.blocked_by}</span>
+                  ? <span className="verdict-block" title={c.blocked_by}>
+                      {L.guardrail(c.blocked_by)}
+                    </span>
                   : c.chosen
                     ? <span className="verdict-ok">chosen</span>
                     : <span className="verdict-idle">allowed</span>}
@@ -119,8 +129,9 @@ export function Decisions({ runId, rows }) {
         </header>
         <div className="chips">
           {FILTERS.map((f) => (
-            <button key={f || "all"} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
-              {f || "all"}
+            <button key={f || "all"} className={filter === f ? "on" : ""}
+                    title={f || "all actions"} onClick={() => setFilter(f)}>
+              {f ? L.action(f) : "All"}
             </button>
           ))}
         </div>
@@ -143,13 +154,19 @@ export function Decisions({ runId, rows }) {
                       <td className="id">{r.payment_id}</td>
                       <td className="num">{rupees(r.amount_paise)}</td>
                       <td>
-                        {r.failure_class}
+                        <span title={r.failure_class}>{L.cause(r.failure_class)}</span>
                         <div className="by">
                           {pct(r.confidence, 0)} ·{" "}
-                          <span className={sourceClass(r.diag_source)}>{r.diag_source}</span>
+                          <span className={sourceClass(r.diag_source)}>
+                            {L.source(r.diag_source)}
+                          </span>
                         </div>
                       </td>
-                      <td><span className={"tag " + r.intervention}>{r.intervention}</span></td>
+                      <td>
+                        <span className={"tag " + r.intervention} title={r.intervention}>
+                          {L.action(r.intervention)}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -317,7 +334,7 @@ export function Operations({ summary, observed }) {
               ? <div className="blank">None fired — suspicious.</div>
               : summary.guardrails.map((g) => (
                   <div className="row2" key={g.guardrail}>
-                    <span className="r-name">{g.guardrail}</span>
+                    <span className="r-name" title={g.guardrail}>{L.guardrail(g.guardrail)}</span>
                     <span className="r-n">{g.blocked_candidates}</span>
                     <span className="r-n" style={{ color: "var(--dim)" }}>{g.payments}</span>
                   </div>
@@ -334,7 +351,7 @@ export function Operations({ summary, observed }) {
                 <div className="mini-h" style={{ marginTop: 0 }}>Still queued</div>
                 {sched.pending.map((p) => (
                   <div className="row2" key={p.intervention}>
-                    <span className="r-name">{p.intervention}</span>
+                    <span className="r-name" title={p.intervention}>{L.action(p.intervention)}</span>
                     <span className="r-n">{p.n}</span>
                     <span className="r-n" style={{ color: "var(--dim)", fontSize: 10 }}>
                       {(p.next_due || "").slice(5, 16)}

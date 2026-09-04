@@ -23,7 +23,8 @@ from typing import Dict, List, Optional, Tuple
 
 from .. import config
 from ..models import ActionCandidate, Decision, Diagnosis, FailedPayment
-from ..taxonomy import Channel, FailureClass, InterventionType, Rail
+from ..taxonomy import (Channel, FailureClass, InterventionType, Rail,
+                        human_cause, human_source)
 from . import economics, guardrails
 from .guardrails import CONTACT_ACTIONS, AgentState
 
@@ -242,7 +243,7 @@ def explain(
             reason = guardrails.DESCRIPTIONS.get(blocked[0].blocked_by, blocked[0].blocked_by)
             return (
                 "Doing nothing on INR {:,.0f} ({}). Best available action was blocked: {}.".format(
-                    rupees, diagnosis.failure_class.value, reason.lower()
+                    rupees, human_cause(diagnosis.failure_class), reason.lower()
                 )
             )
         if diagnosis.failure_class is FailureClass.SUSPECTED_FRAUD:
@@ -262,21 +263,30 @@ def explain(
                 "Doing nothing on INR {:,.0f} ({}). The best action, {}, was worth "
                 "INR {:,.0f} in expected margin against INR {:,.0f} of cost and goodwill - "
                 "not worth doing.".format(
-                    rupees, diagnosis.failure_class.value, best_negative.intervention.value,
+                    rupees, human_cause(diagnosis.failure_class),
+                    best_negative.intervention.value.replace("_", " "),
                     best_negative.gross_value_paise / 100,
                     (best_negative.cost_paise + best_negative.annoyance_paise) / 100,
                 )
             )
         return "Doing nothing on INR {:,.0f}: no action is permitted for {}.".format(
-            rupees, diagnosis.failure_class.value
+            rupees, human_cause(diagnosis.failure_class)
         )
 
     if chosen.intervention is InterventionType.ESCALATE_HUMAN:
+        # Say *why* it could not be established, in a sentence, rather than
+        # truncating the internal rationale mid-word into the merchant's view.
+        if any(f != "truncated" for f in diagnosis.flags):
+            because = "the gateway text contained injection markers"
+        elif diagnosis.failure_class is FailureClass.SUSPECTED_FRAUD:
+            because = "the payment was declined as suspected fraud"
+        elif diagnosis.confidence:
+            because = "no cause reached the confidence floor"
+        else:
+            because = "no rule matched and the model could not classify it"
         return (
-            "Sending INR {:,.0f} to a human. Root cause could not be established "
-            "({}), and the ticket is large enough that silence is the wrong default.".format(
-                rupees, diagnosis.rationale[:80] or "no confident classification"
-            )
+            "Sending INR {:,.0f} to a human: {}, and the ticket is large enough "
+            "that silence is the wrong default.".format(rupees, because)
         )
 
     verb = {
@@ -297,7 +307,8 @@ def explain(
         "Estimated {:.0%} chance of recovery, worth INR {:,.0f} in expected margin "
         "against INR {:,.0f} of cost.".format(
             verb, timing, via, rupees,
-            diagnosis.failure_class.value, diagnosis.confidence, diagnosis.source,
+            human_cause(diagnosis.failure_class), diagnosis.confidence,
+            human_source(diagnosis.source),
             chosen.p_recover, chosen.gross_value_paise / 100,
             (chosen.cost_paise + chosen.annoyance_paise) / 100,
         )
