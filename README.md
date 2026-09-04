@@ -34,6 +34,8 @@ On a batch of **400 failed payments carrying ₹9,80,384**:
 | Customers contacted | **148**, against 399 for a message-everyone policy |
 | Total spend to achieve it | **₹716** |
 
+**[Open the live dashboard](https://saquib-rizwan.github.io/rebound/demo/)** — a static snapshot of one run, no install required.
+
 ![Rebound dashboard](docs/img/dashboard.png)
 
 *Every decision, and — on the right — the full audit trail: every option the agent

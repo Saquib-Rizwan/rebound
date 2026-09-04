@@ -1,0 +1,83 @@
+{
+ "action_mix": [
+  {
+   "intervention": "retry_scheduled",
+   "n": 128,
+   "paise": 25373981,
+   "avg_p": 0.394
+  },
+  {
+   "intervention": "nudge_link",
+   "n": 107,
+   "paise": 24563315,
+   "avg_p": 0.308
+  },
+  {
+   "intervention": "suppress",
+   "n": 90,
+   "paise": 22878171,
+   "avg_p": 0.0
+  },
+  {
+   "intervention": "retry_now",
+   "n": 28,
+   "paise": 8180756,
+   "avg_p": 0.725
+  },
+  {
+   "intervention": "switch_rail",
+   "n": 23,
+   "paise": 6223043,
+   "avg_p": 0.303
+  },
+  {
+   "intervention": "request_remandate",
+   "n": 18,
+   "paise": 4444134,
+   "avg_p": 0.251
+  },
+  {
+   "intervention": "escalate_human",
+   "n": 6,
+   "paise": 6374979,
+   "avg_p": 0.0
+  }
+ ],
+ "guardrails": [
+  {
+   "guardrail": "G05_quiet_hours",
+   "blocked_candidates": 1098,
+   "payments": 213
+  },
+  {
+   "guardrail": "G06_contact_cooldown",
+   "blocked_candidates": 612,
+   "payments": 118
+  },
+  {
+   "guardrail": "G01_never_retry_class",
+   "blocked_candidates": 92,
+   "payments": 46
+  },
+  {
+   "guardrail": "G08_min_ticket",
+   "blocked_candidates": 4,
+   "payments": 1
+  }
+ ],
+ "cost_of_caution": {
+  "forgone_paise": 2688972.6,
+  "payments": 71,
+  "by_guardrail": [
+   {
+    "guardrail": "G06_contact_cooldown",
+    "ev_blocked": 7860169.0
+   },
+   {
+    "guardrail": "G05_quiet_hours",
+    "ev_blocked": 5269251.0
+   }
+  ]
+ },
+ "outcomes": []
+}

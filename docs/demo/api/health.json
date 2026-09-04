@@ -1,0 +1,8 @@
+{
+ "status": "ok",
+ "policy_version": "rebound-policy-v1.3",
+ "dry_run": true,
+ "provider": "gemini",
+ "webhook_secret_configured": true,
+ "static_snapshot": true
+}

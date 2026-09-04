@@ -1,0 +1,14 @@
+{
+ "runs": [
+  {
+   "run_id": "demo",
+   "started_at": "2026-09-04T14:25:41",
+   "policy_version": "rebound-policy-v1.3",
+   "provider": "offline_tfidf",
+   "model": "tfidf-char-3-5-nearest-centroid",
+   "dry_run": 1,
+   "batch_size": 400,
+   "notes": ""
+  }
+ ]
+}

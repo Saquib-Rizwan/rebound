@@ -660,6 +660,97 @@ def cmd_replay(args) -> int:
     return 0
 
 
+def cmd_export_static(args) -> int:
+    """Freezes the read API into flat JSON so the dashboard can be hosted anywhere.
+
+    The dashboard only ever reads. That means it does not actually need a backend
+    to be *demonstrated* - it needs the same JSON the backend would have returned.
+    Writing those responses to disk turns it into a static site that can sit on
+    GitHub Pages with no server, no database, and nothing that can be down when
+    somebody clicks the link.
+
+    The live server remains the real thing; this is a snapshot of one run.
+    """
+    import json
+    import shutil
+
+    from .ledger.store import Ledger
+
+    out = config.ROOT / "docs" / "demo"
+    api = out / "api"
+    api.mkdir(parents=True, exist_ok=True)
+
+    ledger = Ledger(config.DATA_DIR / "rebound.sqlite3")
+    run_id = args.run_id
+
+    decisions = ledger.query(
+        "SELECT payment_id, amount_paise, failure_class, confidence, diag_source, "
+        "intervention, delay_hours, channel, ev_paise, explanation, decided_at "
+        "FROM decisions WHERE run_id = ? ORDER BY amount_paise DESC", (run_id,))
+    if not decisions:
+        print("no decisions for run '{}' - run the agent first".format(run_id))
+        ledger.close()
+        return 1
+
+    # Per-payment audit trails, keyed by id, so the client resolves them locally
+    # instead of fetching four hundred separate files.
+    details = {}
+    for row in decisions:
+        detail = ledger.explain_payment(row["payment_id"])
+        if detail:
+            details[row["payment_id"]] = detail
+
+    def write(name, payload):
+        (api / name).write_text(json.dumps(payload, indent=1, default=str), encoding="utf-8")
+
+    write("health.json", {
+        "status": "ok", "policy_version": config.POLICY_VERSION,
+        "dry_run": True, "provider": "gemini",
+        "webhook_secret_configured": True, "static_snapshot": True,
+    })
+    write("runs.json", {"runs": ledger.query("SELECT * FROM runs WHERE run_id = ?", (run_id,))})
+    write("decisions.json", {"decisions": decisions})
+    write("details.json", details)
+    write("summary.json", {
+        "action_mix": ledger.action_mix(run_id),
+        "guardrails": ledger.guardrail_hits(run_id),
+        "cost_of_caution": ledger.cost_of_caution(run_id),
+        "outcomes": ledger.outcome_split(),
+    })
+    write("scheduled.json", {
+        "pending": ledger.query(
+            "SELECT intervention, COUNT(*) AS n, MIN(scheduled_for) AS next_due "
+            "FROM executions WHERE fired_at IS NULL AND scheduled_for IS NOT NULL "
+            "GROUP BY intervention ORDER BY n DESC"),
+        "fired": ledger.query(
+            "SELECT fire_result, COUNT(*) AS n FROM executions WHERE fired_at IS NOT NULL "
+            "GROUP BY fire_result ORDER BY n DESC LIMIT 12"),
+    })
+    write("webhooks.json", {"events": ledger.query(
+        "SELECT event_id, event_type, received_at, signature_ok, payment_id, handled, error "
+        "FROM webhook_events ORDER BY received_at DESC LIMIT 12")})
+
+    for name, src in (("recovery.json", "recovery.json"), ("insights.json", "insights.json")):
+        path = config.REPORTS_DIR / src
+        if path.exists():
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if name == "insights.json":
+                payload = {"insights": payload}
+            write(name, payload)
+        else:
+            print("  warning: reports/{} missing, that panel will be empty".format(src))
+
+    ledger.close()
+
+    total = sum(f.stat().st_size for f in api.glob("*.json"))
+    print("exported run '{}' to {}".format(run_id, out))
+    print("  {} decisions, {} audit trails, {:.1f} MB of JSON".format(
+        len(decisions), len(details), total / 1e6))
+    print()
+    print("next: cd frontend && npm run build:static")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="rebound")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -726,6 +817,10 @@ def main(argv=None) -> int:
     sc.add_argument("--rounds", type=int, default=1)
     sc.add_argument("--interval", type=float, default=0.0, help="seconds between rounds")
     sc.set_defaults(func=cmd_scheduler)
+
+    ex = sub.add_parser("export-static", help="freeze the dashboard into static JSON")
+    ex.add_argument("--run-id", default="demo")
+    ex.set_defaults(func=cmd_export_static)
 
     sv = sub.add_parser("serve", help="run the webhook receiver and read API")
     sv.add_argument("--host", default="127.0.0.1")

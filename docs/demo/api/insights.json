@@ -1,0 +1,103 @@
+{
+ "insights": [
+  {
+   "title": "upi carries 34% of failed value",
+   "detail": "157 of failures on this rail, worth INR 335,864, and its single largest cause is auth_dropoff (39% of the rail's failed value).",
+   "recommendation": "Compare authorisation rates across your acquirers on this rail before investing further in recovery. A routing change fixes failures that recovery can only chase after the fact.",
+   "value_paise": 33586420,
+   "value_rupees": 335864.2,
+   "share": 0.3426,
+   "severity": "medium",
+   "evidence": {
+    "rail": "upi",
+    "top_cause": "auth_dropoff"
+   }
+  },
+  {
+   "title": "auth_dropoff is 27% of failed value",
+   "detail": "99 payments worth INR 263,034. Left alone, roughly 22% of these recover on their own, which puts about INR 205,167 genuinely at risk.",
+   "recommendation": "Checkout drop-off is a UX problem before it is a recovery problem. Shorten the OTP step, keep the customer on-page, and pre-fill the instrument.",
+   "value_paise": 26303411,
+   "value_rupees": 263034.11,
+   "share": 0.2683,
+   "severity": "high",
+   "evidence": {
+    "count": 99,
+    "class": "auth_dropoff"
+   }
+  },
+  {
+   "title": "insufficient_funds is 21% of failed value",
+   "detail": "93 payments worth INR 202,321. Left alone, roughly 18% of these recover on their own, which puts about INR 165,903 genuinely at risk.",
+   "recommendation": "Align retries with salary cycles rather than a fixed backoff, and offer a smaller first instalment where the ticket allows it.",
+   "value_paise": 20232116,
+   "value_rupees": 202321.16,
+   "share": 0.2064,
+   "severity": "high",
+   "evidence": {
+    "count": 93,
+    "class": "insufficient_funds"
+   }
+  },
+  {
+   "title": "8% of failed value should not be chased at all",
+   "detail": "37 payments worth INR 81,289 were declined for fraud, issuer risk, or deliberate customer cancellation. Retrying these earns fees and chargeback exposure rather than revenue, and messaging the customer is worse than silence.",
+   "recommendation": "Exclude these classes from any recovery campaign, and measure your recovery rate against the addressable base rather than all failures - otherwise the ceiling looks lower than it is and every tool underperforms on paper.",
+   "value_paise": 8128875,
+   "value_rupees": 81288.75,
+   "share": 0.0829,
+   "severity": "medium",
+   "evidence": {
+    "count": 37
+   }
+  },
+  {
+   "title": "3 customers failed 7 or more times",
+   "detail": "They account for INR 59,753 of failed value, against a batch average of 3.1 failures per customer. Repeat failure by the same payer is usually a broken saved instrument or a persistent issuer block, not bad luck.",
+   "recommendation": "Route these to a one-time human or assisted flow rather than another automated attempt. Each additional silent retry lowers the odds and, on a contact channel, raises churn risk.",
+   "value_paise": 5975251,
+   "value_rupees": 59752.51,
+   "share": 0.0609,
+   "severity": "medium",
+   "evidence": {
+    "customers": 3
+   }
+  },
+  {
+   "title": "Bank downtime clusters between 17:00 and 20:00",
+   "detail": "31% of all downtime-related failure value lands in a three-hour window. That is an issuer availability pattern, not customer behaviour - the same payments would very likely succeed a few hours later.",
+   "recommendation": "Move scheduled debits, subscription renewals and mandate presentments out of 17:00-20:00. For anything that must run then, set the first retry to land after 20:00 rather than the default short backoff.",
+   "value_paise": 3496288,
+   "value_rupees": 34962.88,
+   "share": 0.3055,
+   "severity": "high",
+   "evidence": {
+    "window_start": 17,
+    "window_end": 20,
+    "hourly_value_paise": {
+     "20": 107236,
+     "23": 554509,
+     "11": 143721,
+     "13": 843506,
+     "7": 371370,
+     "21": 280850,
+     "15": 15567,
+     "12": 27580,
+     "5": 389978,
+     "19": 178808,
+     "2": 1687514,
+     "1": 175527,
+     "0": 1044300,
+     "6": 316377,
+     "22": 66563,
+     "10": 1391472,
+     "3": 305840,
+     "16": 133924,
+     "17": 3317480,
+     "4": 43313,
+     "14": 50868
+    }
+   }
+  }
+ ]
+}

@@ -1,0 +1,35 @@
+{
+ "pending": [
+  {
+   "intervention": "retry_scheduled",
+   "n": 128,
+   "next_due": "2026-09-04T15:25:24"
+  },
+  {
+   "intervention": "nudge_link",
+   "n": 107,
+   "next_due": "2026-09-04T14:25:24"
+  },
+  {
+   "intervention": "retry_now",
+   "n": 28,
+   "next_due": "2026-09-04T14:25:24"
+  },
+  {
+   "intervention": "switch_rail",
+   "n": 23,
+   "next_due": "2026-09-04T14:25:24"
+  },
+  {
+   "intervention": "request_remandate",
+   "n": 18,
+   "next_due": "2026-09-04T14:25:24"
+  },
+  {
+   "intervention": "escalate_human",
+   "n": 6,
+   "next_due": "2026-09-04T14:25:24"
+  }
+ ],
+ "fired": []
+}

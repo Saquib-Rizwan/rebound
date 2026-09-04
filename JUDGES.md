@@ -5,6 +5,14 @@ and, if you want to, attack it efficiently.
 
 ---
 
+## If you would rather not clone anything
+
+**[The dashboard is live here](https://saquib-rizwan.github.io/rebound/demo/)** — a frozen snapshot of one run, served as
+static files. Every decision, every audit trail, the policy comparison and the
+systemic findings, with no backend to be down.
+
+---
+
 ## Sixty seconds
 
 **Rebound is a payment-recovery agent whose most distinctive behaviour is refusing to
