@@ -1,9 +1,12 @@
 fastapi>=0.110
 uvicorn>=0.27
 pydantic>=2.6
-pydantic-settings>=2.2
 httpx>=0.27
-pandas>=1.5
 numpy>=1.24
 scikit-learn>=1.3
 pytest>=7.4
+
+# Optional. Only needed to use Claude as the tail classifier; Gemini goes over
+# plain HTTP and the offline classifier needs nothing. Install with:
+#   pip install anthropic
+# anthropic>=0.40

@@ -215,7 +215,19 @@ class AnthropicProvider(Provider):
         self.model = config.ANTHROPIC_MODEL
 
     def available(self) -> bool:
-        return bool(config.ANTHROPIC_API_KEY)
+        """A key is not enough - the SDK is an optional dependency.
+
+        Reporting availability without it would select this provider and then fail
+        on every call, degrading to the offline classifier for a reason nobody
+        could diagnose from the output.
+        """
+        if not config.ANTHROPIC_API_KEY:
+            return False
+        try:
+            import anthropic  # noqa: F401
+        except ImportError:
+            return False
+        return True
 
     def classify(self, prompt: str) -> _Response:
         import anthropic
