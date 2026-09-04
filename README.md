@@ -385,6 +385,7 @@ tests/                        69 tests: safety, security, compliance, quality,
 
 | | |
 |---|---|
+| **[JUDGES.md](JUDGES.md)** | **Start here if you are reviewing this.** Sixty seconds, five minutes, and the questions I would attack it with |
 | [docs/DEMO.md](docs/DEMO.md) | Nine-step walkthrough with expected output |
 | [docs/WEBHOOKS.md](docs/WEBHOOKS.md) | Wiring real Razorpay webhooks, including how to force a test failure |
 | [reports/classifier.md](reports/classifier.md) | Accuracy, confusion matrix, ablation, drift |

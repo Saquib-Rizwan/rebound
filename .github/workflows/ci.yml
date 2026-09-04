@@ -41,14 +41,13 @@ jobs:
       - name: Calibration and bounded exploration
         run: python -m pytest tests/test_calibration.py -q
 
-      # The README's headline numbers are produced by code in this repo. If they
-      # drift apart, one of the two is wrong and the build should say so.
-      - name: README claims match the code
-        run: |
-          python rebound.py generate
-          python rebound.py run --provider offline --run-id ci
-          python rebound.py eval-policy --replications 8 --sens-replications 3
-          python -m pytest tests/test_readme_claims.py -q
+      # The README's headline numbers describe one published evaluation, and that
+      # evaluation is committed as reports/recovery.json. CI checks the README
+      # against THAT artefact - it must not regenerate it first. A shorter run
+      # produces different numbers, so re-deriving here would compare the README
+      # to a study it was never describing and fail for the wrong reason.
+      - name: README claims match the published report
+        run: python -m pytest tests/test_readme_claims.py -q
 
       - name: End to end agent pass
         run: |
