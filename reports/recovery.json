@@ -2,7 +2,7 @@
   "meta": {
     "payments": 400,
     "at_risk_paise": 98038379,
-    "replications": 24,
+    "replications": 40,
     "sigma": 0.35,
     "provider": "offline_tfidf",
     "simulated": true
@@ -10,117 +10,117 @@
   "policies": [
     {
       "name": "do_nothing",
-      "recovery_rate": 0.18739583333333332,
-      "recovered_paise": 18521149.666666668,
+      "recovery_rate": 0.186875,
+      "recovered_paise": 19001509.65,
       "cost_paise": 0.0,
-      "net_paise": 6482402.383333333,
+      "net_paise": 6650528.3774999995,
       "contacts": 0.0,
       "churned": 0.0,
       "suppressed": 400.0
     },
     {
       "name": "retry_all",
-      "recovery_rate": 0.23979166666666668,
-      "recovered_paise": 23923940.541666668,
+      "recovery_rate": 0.238125,
+      "recovered_paise": 24464776.375,
       "cost_paise": 815000.0,
-      "net_paise": 7558379.189583332,
+      "net_paise": 7747671.73125,
       "contacts": 0.0,
       "churned": 0.0,
       "suppressed": 0.0
     },
     {
       "name": "blind_24h",
-      "recovery_rate": 0.2632291666666667,
-      "recovered_paise": 25360054.333333332,
+      "recovery_rate": 0.2588125,
+      "recovered_paise": 25414745.45,
       "cost_paise": 815000.0,
-      "net_paise": 8061019.016666666,
+      "net_paise": 8080160.907499999,
       "contacts": 0.0,
       "churned": 0.0,
       "suppressed": 0.0
     },
     {
       "name": "nudge_all",
-      "recovery_rate": 0.380625,
-      "recovered_paise": 37738048.833333336,
-      "cost_paise": 370420.6666666667,
-      "net_paise": 12837896.424999999,
+      "recovery_rate": 0.377,
+      "recovered_paise": 37811908.025,
+      "cost_paise": 383129.0,
+      "net_paise": 12851038.80875,
       "contacts": 399.0,
-      "churned": 12.916666666666666,
+      "churned": 13.425,
       "suppressed": 1.0
     },
     {
       "name": "rebound",
-      "recovery_rate": 0.4053125,
-      "recovered_paise": 38556949.291666664,
-      "cost_paise": 48191.0,
-      "net_paise": 13446741.252083331,
-      "contacts": 146.0,
+      "recovery_rate": 0.397125,
+      "recovered_paise": 38419436.4,
+      "cost_paise": 47594.0,
+      "net_paise": 13399208.739999998,
+      "contacts": 148.0,
       "churned": 0.0,
-      "suppressed": 88.0
+      "suppressed": 90.0
     }
   ],
   "headline": {
-    "uplift_vs_nothing_paise": 6964338.8687499985,
-    "uplift_ci_low_paise": 4619117.449999999,
-    "uplift_ci_high_paise": 8047528.800000001,
+    "uplift_vs_nothing_paise": 6748680.362499999,
+    "uplift_ci_low_paise": 4592688.15,
+    "uplift_ci_high_paise": 8020402.999999999,
     "win_rate_vs_nothing": 1.0,
     "best_naive": "nudge_all",
-    "uplift_vs_best_naive_paise": 608844.8270833325,
-    "win_rate_vs_best_naive": 0.875
+    "uplift_vs_best_naive_paise": 548169.9312499985,
+    "win_rate_vs_best_naive": 0.85
   },
   "sensitivity": [
     {
       "sigma": 0.0,
       "net": {
-        "do_nothing": 6270389.95625,
-        "retry_all": 7567654.481249999,
-        "blind_24h": 8350082.368749999,
-        "nudge_all": 11465872.375,
-        "rebound": 13454861.4125
+        "do_nothing": 6477471.349999999,
+        "retry_all": 7721036.658333332,
+        "blind_24h": 8617277.020833334,
+        "nudge_all": 11550700.558333332,
+        "rebound": 13413862.3125
       },
       "agent_rank": 1
     },
     {
       "sigma": 0.2,
       "net": {
-        "do_nothing": 6270389.95625,
-        "retry_all": 7381772.149999999,
-        "blind_24h": 8085802.6625,
-        "nudge_all": 12006482.024999999,
-        "rebound": 13155988.84375
+        "do_nothing": 6477471.349999999,
+        "retry_all": 7553175.083333333,
+        "blind_24h": 8296546.704166666,
+        "nudge_all": 12116074.866666665,
+        "rebound": 13206246.629166665
       },
       "agent_rank": 1
     },
     {
       "sigma": 0.35,
       "net": {
-        "do_nothing": 6270389.95625,
-        "retry_all": 7272628.89375,
-        "blind_24h": 7824906.406249999,
-        "nudge_all": 12649773.143749999,
-        "rebound": 12943350.4125
+        "do_nothing": 6477471.349999999,
+        "retry_all": 7463464.425,
+        "blind_24h": 8060738.695833333,
+        "nudge_all": 12738660.262499997,
+        "rebound": 13096707.041666666
       },
       "agent_rank": 1
     },
     {
       "sigma": 0.5,
       "net": {
-        "do_nothing": 6270389.95625,
-        "retry_all": 7144111.78125,
-        "blind_24h": 7461823.931249999,
-        "nudge_all": 13061065.625,
-        "rebound": 12714968.98125
+        "do_nothing": 6477471.349999999,
+        "retry_all": 7316151.233333333,
+        "blind_24h": 7623609.462499999,
+        "nudge_all": 13281815.783333331,
+        "rebound": 12906416.416666666
       },
       "agent_rank": 2
     },
     {
       "sigma": 0.8,
       "net": {
-        "do_nothing": 6270389.95625,
-        "retry_all": 6766650.999999999,
-        "blind_24h": 7086028.1,
-        "nudge_all": 13504560.118749999,
-        "rebound": 12073210.95
+        "do_nothing": 6477471.349999999,
+        "retry_all": 6885881.095833332,
+        "blind_24h": 7256563.645833332,
+        "nudge_all": 13650281.783333331,
+        "rebound": 12321335.620833332
       },
       "agent_rank": 2
     }

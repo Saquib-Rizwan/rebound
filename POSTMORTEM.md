@@ -207,3 +207,57 @@ test and appeared within seconds of the first real Razorpay event. The fixture
 encoded an assumption about the world instead of testing it - which is the whole
 argument for having done the live integration rather than stopping at the
 simulator.
+
+---
+
+## 7. Two experiments quietly became one
+
+**Feature work on calibration. Severity: silently corrupted a comparison.**
+
+To show that exploration finds action-arms that pure exploitation never tries, we ran
+the same batch twice — once exploiting, once with Thompson sampling — under two run
+ids, and compared which arms each had touched.
+
+The first numbers were nonsense: the exploit run showed 34 actions where it should
+have shown roughly 300, and the arm counts moved between queries of the *same* run.
+
+`decision_id` was a hash of payment id, policy version, timestamp and chosen action.
+It did not include the run id. Since the decision timestamp is derived from the
+payment's own `created_at`, replaying the same batch produced **identical decision
+ids**, and `INSERT OR REPLACE` therefore did not insert a second set of rows - it
+rewrote the first run's rows and relabelled them with the new run id.
+
+The second experiment was eating the first one. Nothing errored, and the resulting
+table looked entirely plausible.
+
+**Fix:** `run_id` is part of the hash. Deliberately *not* added to `idempotency_key`,
+which identifies an outbound action rather than a record: two runs of the same batch
+must still be prevented from messaging a customer twice, and that property depends on
+the key colliding across runs. The two ids answer different questions and now do so
+correctly.
+
+**What made it findable:** the numbers were absurd rather than merely wrong. A subtler
+version of this bug - say, a 10% overlap instead of a total overwrite - would have
+produced a believable table and shipped.
+
+---
+
+## 8. The fallback path could crash
+
+**Test writing. Severity: latent, but in the worst possible place.**
+
+`_parse_verdict` in `diagnose/llm.py` handles model output that is not what we asked
+for. A test fed it `"[]"` — valid JSON, wrong shape — and it raised
+`AttributeError: 'list' object has no attribute 'get'`.
+
+This is the *fallback* path. It exists precisely to absorb a model behaving badly, so
+it is the one function in the pipeline that must never raise. A model returning a bare
+list instead of an object is not exotic; it is an ordinary Tuesday.
+
+**Fix:** check `isinstance(data, dict)` before reading fields, and degrade to
+`UNKNOWN` like every other malformed case.
+
+**Worth noting:** we had been running this code against a live model for two days
+without hitting it. The test found it in under a second. That is the argument for
+writing tests for the paths you believe are already safe, rather than only for the
+ones you are unsure about.

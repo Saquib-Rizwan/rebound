@@ -4,26 +4,26 @@
 
 - Batch: **400 payments, INR 980,384 at risk**
 - Diagnosis provider: `offline_tfidf`
-- 24 replications per policy, paired on common random numbers, world noise sigma = 0.35
+- 40 replications per policy, paired on common random numbers, world noise sigma = 0.35
 
 ## Policy comparison
 
 | Policy | Recovery rate | Recovered | Cost | Net contribution | 90% interval | Contacts | Churned |
 |---|---|---|---|---|---|---|---|
-| do_nothing | 18.7% | INR 185,211 | INR 0 | **INR 64,824** | INR 36,455 to 81,918 | 0 | 0.0 |
-| retry_all | 24.0% | INR 239,239 | INR 8,150 | **INR 75,584** | INR 43,717 to 91,423 | 0 | 0.0 |
-| blind_24h | 26.3% | INR 253,601 | INR 8,150 | **INR 80,610** | INR 54,358 to 96,135 | 0 | 0.0 |
-| nudge_all | 38.1% | INR 377,380 | INR 3,704 | **INR 128,379** | INR 100,882 to 144,046 | 399 | 12.9 |
-| **rebound** | 40.5% | INR 385,569 | INR 482 | **INR 134,467** | INR 108,683 to 152,257 | 146 | 0.0 |
+| do_nothing | 18.7% | INR 190,015 | INR 0 | **INR 66,505** | INR 40,693 to 86,311 | 0 | 0.0 |
+| retry_all | 23.8% | INR 244,648 | INR 8,150 | **INR 77,477** | INR 46,743 to 99,673 | 0 | 0.0 |
+| blind_24h | 25.9% | INR 254,147 | INR 8,150 | **INR 80,802** | INR 53,949 to 101,811 | 0 | 0.0 |
+| nudge_all | 37.7% | INR 378,119 | INR 3,831 | **INR 128,510** | INR 102,529 to 149,295 | 399 | 13.4 |
+| **rebound** | 39.7% | INR 384,194 | INR 476 | **INR 133,992** | INR 111,534 to 156,808 | 148 | 0.0 |
 
 *Net contribution* is recovered value at the merchant's margin, minus what the policy spent to get it - including the penalties a policy incurs for retrying payments that should never be retried, and for churning customers it over-messaged.
 
 ## Headline
 
-- Against doing nothing, Rebound adds **INR 69,643** of net contribution on this batch (+107% on a base of INR 64,824), 90% interval INR 46,191 to 80,475, winning in 100% of replications.
-- Against the best naive alternative (`nudge_all`), it adds **INR 6,088** (90% interval INR -19,423 to 17,690), winning in 88% of replications.
-- It does that while contacting **146** customers, against `nudge_all`'s **399** - 63% fewer messages.
-- It stays silent on **88** of 400 payments.
+- Against doing nothing, Rebound adds **INR 67,487** of net contribution on this batch (+101% on a base of INR 66,505), 90% interval INR 45,927 to 80,204, winning in 100% of replications.
+- Against the best naive alternative (`nudge_all`), it adds **INR 5,482** (90% interval INR -6,672 to 17,696), winning in 85% of replications.
+- It does that while contacting **148** customers, against `nudge_all`'s **399** - 63% fewer messages.
+- It stays silent on **90** of 400 payments.
 
 ## Sensitivity: how wrong can the agent be and still win?
 
@@ -31,15 +31,15 @@
 
 | sigma | do_nothing | retry_all | blind_24h | nudge_all | rebound | agent rank | nudge_all churn | rebound churn |
 |---|---|---|---|---|---|---|---|---|
-| 0.0 | 62,704 | 75,677 | 83,501 | 114,659 | 134,549 | **1 of 5** | 12.1 | 0.0 |
-| 0.2 | 62,704 | 73,818 | 80,858 | 120,065 | 131,560 | **1 of 5** | 12.1 | 0.0 |
-| 0.35 | 62,704 | 72,726 | 78,249 | 126,498 | 129,434 | **1 of 5** | 12.1 | 0.0 |
-| 0.5 | 62,704 | 71,441 | 74,618 | 130,611 | 127,150 | **2 of 5** | 12.1 | 0.0 |
-| 0.8 | 62,704 | 67,667 | 70,860 | 135,046 | 120,732 | **2 of 5** | 12.1 | 0.0 |
+| 0.0 | 64,775 | 77,210 | 86,173 | 115,507 | 134,139 | **1 of 5** | 12.6 | 0.0 |
+| 0.2 | 64,775 | 75,532 | 82,965 | 121,161 | 132,062 | **1 of 5** | 12.6 | 0.0 |
+| 0.35 | 64,775 | 74,635 | 80,607 | 127,387 | 130,967 | **1 of 5** | 12.6 | 0.0 |
+| 0.5 | 64,775 | 73,162 | 76,236 | 132,818 | 129,064 | **2 of 5** | 12.6 | 0.0 |
+| 0.8 | 64,775 | 68,859 | 72,566 | 136,503 | 123,213 | **2 of 5** | 12.6 | 0.0 |
 
 **The honest reading of this table.** Rebound wins on money while its efficacy beliefs are roughly right. Once they are routinely off by half (sigma 0.5 and above), blanket messaging earns more, because a policy that targets badly is worse than one that does not target at all. That is the real boundary of this approach and it is the argument for calibrating against observed outcomes before trusting the policy with a budget.
 
-It is also worth reading the last two columns while you do. Even where `nudge_all` earns more, it gets there by messaging every consenting customer on the list and burning roughly 12 of them per batch. Rebound churns none. A quarter of extra revenue that costs you customers is a loan, not a win - but this harness only scores one batch, so it flatters the blanket policy by construction.
+It is also worth reading the last two columns while you do. Even where `nudge_all` earns more, it gets there by messaging every consenting customer on the list and burning roughly 13 of them per batch. Rebound churns none. A quarter of extra revenue that costs you customers is a loan, not a win - but this harness only scores one batch, so it flatters the blanket policy by construction.
 
 ## Methodology and limitations
 
